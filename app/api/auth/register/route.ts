@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     })
 
     // Send verification email
-    const verificationUrl = `${process.env.NEXTAUTH_URL}/verify-email?token=${verificationToken}`
+    const verificationUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/verify-email?token=${verificationToken}&role=Admin`
 
     await sendEmail({
       to: email,

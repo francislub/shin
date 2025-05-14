@@ -6,6 +6,13 @@ datasource db {
   provider = "mongodb"
   url      = env("DATABASE_URL")
 }
+model AdminRegistrationToken {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  email     String    @unique
+  token     String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
 
 model Admin {
   id                      String                 @id @default(auto()) @map("_id") @db.ObjectId

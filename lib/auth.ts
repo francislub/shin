@@ -1,46 +1,53 @@
-import { compare, hash } from "bcryptjs"
-import { sign, verify } from "jsonwebtoken"
+import bcrypt from "bcryptjs"
+import jwt from "jsonwebtoken"
 import { randomBytes } from "crypto"
 
-// Password hashing
+// Use environment variable for JWT secret with fallback
+const JWT_SECRET = process.env.JWT_SECRET || "temporary_fallback_secret_replace_in_production"
+
+// Hash password
 export async function hashPassword(password: string): Promise<string> {
-  return await hash(password, 12)
+  return await bcrypt.hash(password, 10)
 }
 
-// Password verification
+// Verify password
 export async function verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
-  return await compare(password, hashedPassword)
+  return await bcrypt.compare(password, hashedPassword)
 }
 
 // Generate JWT token
-export function generateToken(payload: any, expiresIn = "7d"): string {
-  return sign(payload, process.env.JWT_SECRET!, { expiresIn })
+export function generateToken(payload: any): string {
+  // Ensure role is preserved exactly as provided
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "24h" })
 }
 
 // Verify JWT token
 export function verifyToken(token: string): any {
   try {
-    return verify(token, process.env.JWT_SECRET!)
+    return jwt.verify(token, JWT_SECRET)
   } catch (error) {
+    console.error("Token verification error:", error)
     return null
   }
 }
 
-// Generate verification token
-export function generateVerificationToken(): string {
-  return randomBytes(32).toString("hex")
+// Generate random token for email verification
+export function generateVerificationToken(length = 32): string {
+  return randomBytes(length).toString("hex")
 }
 
-// Generate reset token
-export function generateResetToken(): string {
-  return randomBytes(32).toString("hex")
-}
-
-export async function verifyJWT(token: string) {
+// Verify JWT token
+export async function verifyJWT(token: string): Promise<any> {
   try {
-    const verified = verify(token, process.env.JWT_SECRET!)
-    return verified
+    const decoded = jwt.verify(token, JWT_SECRET)
+    return decoded
   } catch (error) {
-    return false
+    console.error("JWT verification error:", error)
+    return null
   }
+}
+
+// Generate random token for password reset
+export function generateResetToken(length = 32): string {
+  return randomBytes(length).toString("hex")
 }
