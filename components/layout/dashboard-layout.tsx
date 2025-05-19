@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/context/auth-context"
 import { Header } from "@/components/layout/header"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -18,35 +18,47 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children, title, requiredRole }: DashboardLayoutProps) {
   const { user, isLoading, checkAuth } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
   const isMobile = useMobile()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
 
+  // Reset sidebar state when pathname changes (for mobile)
   useEffect(() => {
-    let isMounted = true;
-    
+    if (isMobile) {
+      setSidebarOpen(false)
+    }
+  }, [pathname, isMobile])
+
+  useEffect(() => {
+    let isMounted = true
+
     const verifyAuth = async () => {
       try {
         if (isMounted) {
           // Only check auth if we haven't already
           if (!authChecked) {
+            console.log("Checking authentication...")
             const isAuthenticated = await checkAuth()
-            
+
             if (isMounted) {
               if (!isAuthenticated) {
+                console.log("Not authenticated, redirecting to login")
                 router.push("/login")
                 return
               }
-              
-              setAuthChecked(true);
+
+              console.log("Authentication verified")
+              setAuthChecked(true)
             }
           }
-          
+
           // Only check required roles if we have a user and required role
           if (requiredRole && user) {
             const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole]
-            
+
             if (!roles.includes(user.role)) {
+              console.log(`User role ${user.role} does not match required roles`, roles)
               // Redirect to appropriate dashboard based on role
               if (user.role === "Admin") {
                 router.push("/admin/dashboard")
@@ -65,25 +77,50 @@ export function DashboardLayout({ children, title, requiredRole }: DashboardLayo
           }
         }
       } catch (error) {
-        console.error("Auth verification error:", error);
+        console.error("Auth verification error:", error)
         if (isMounted) {
-          router.push("/login");
+          router.push("/login")
         }
       }
     }
-    
+
     if (!isLoading) {
-      verifyAuth();
+      verifyAuth()
     }
-    
+
     return () => {
-      isMounted = false;
-    };
-  }, [user, isLoading, authChecked, checkAuth, router, requiredRole]);
+      isMounted = false
+    }
+  }, [user, isLoading, authChecked, checkAuth, router, requiredRole])
 
   const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen)
+    setSidebarOpen((prev) => !prev)
   }
+
+  // Ensure sidebar is visible on desktop regardless of state
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        // lg breakpoint
+        // Force sidebar to be visible on desktop
+        const sidebarElement = document.querySelector(".sidebar-container") as HTMLElement
+        if (sidebarElement) {
+          sidebarElement.style.transform = "translateX(0)"
+        }
+      }
+    }
+
+    // Initial check
+    handleResize()
+
+    // Add event listener
+    window.addEventListener("resize", handleResize)
+
+    // Cleanup
+    return () => {
+      window.removeEventListener("resize", handleResize)
+    }
+  }, [])
 
   if (isLoading) {
     return (
@@ -100,7 +137,7 @@ export function DashboardLayout({ children, title, requiredRole }: DashboardLayo
     <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Sidebar - fixed position */}
       <Sidebar
-        className={`fixed inset-y-0 left-0 z-50 transition-transform duration-300 ease-in-out ${
+        className={`sidebar-container fixed inset-y-0 left-0 z-50 transition-transform duration-300 ease-in-out ${
           sidebarOpen || !isMobile ? "translate-x-0" : "-translate-x-full"
         } lg:translate-x-0`}
         onClose={() => setSidebarOpen(false)}

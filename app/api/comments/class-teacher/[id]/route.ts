@@ -20,18 +20,24 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const comment = await prisma.classTeacherComment.findUnique({
       where: { id: params.id },
       include: {
-        teacher: true,
+        teacher: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
       },
     })
 
     if (!comment) {
-      return NextResponse.json({ error: "Class teacher comment not found" }, { status: 404 })
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 })
     }
 
     return NextResponse.json(comment)
   } catch (error) {
     console.error("Get class teacher comment error:", error)
-    return NextResponse.json({ error: "Something went wrong while fetching class teacher comment" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while fetching comment" }, { status: 500 })
   }
 }
 
@@ -46,81 +52,62 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     const decoded = verifyToken(token)
 
-    if (!decoded) {
+    if (!decoded || (decoded.role !== "Admin" && decoded.role !== "Teacher")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Get the comment to check permissions
-    const existingComment = await prisma.classTeacherComment.findUnique({
-      where: { id: params.id },
-    })
+    // If teacher, check if they own the comment
+    if (decoded.role === "Teacher") {
+      const comment = await prisma.classTeacherComment.findUnique({
+        where: { id: params.id },
+      })
 
-    if (!existingComment) {
-      return NextResponse.json({ error: "Class teacher comment not found" }, { status: 404 })
-    }
-
-    // Only allow the teacher who created the comment or an admin to update it
-    if (decoded.role !== "Admin" && (decoded.role !== "Teacher" || decoded.id !== existingComment.teacherId)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      if (!comment || comment.teacherId !== decoded.id) {
+        return NextResponse.json({ error: "Unauthorized to modify this comment" }, { status: 403 })
+      }
     }
 
     const body = await req.json()
-    const { from, to, comment, teacherId } = body
+    const { from, to, comment, teacherId, schoolId } = body
 
-    // Check for overlapping comment ranges (excluding the current comment)
-    const overlappingComment = await prisma.classTeacherComment.findFirst({
+    // Validate input
+    if (from >= to) {
+      return NextResponse.json({ error: "From value must be less than To value" }, { status: 400 })
+    }
+
+    // Check for overlapping ranges (excluding the current comment)
+    const overlappingComments = await prisma.classTeacherComment.findMany({
       where: {
+        schoolId,
+        teacherId: teacherId || null,
         id: { not: params.id },
-        teacherId: teacherId || existingComment.teacherId,
-        schoolId: existingComment.schoolId,
         OR: [
-          {
-            AND: [{ from: { lte: from } }, { to: { gte: from } }],
-          },
-          {
-            AND: [{ from: { lte: to } }, { to: { gte: to } }],
-          },
-          {
-            AND: [{ from: { gte: from } }, { to: { lte: to } }],
-          },
+          { AND: [{ from: { lte: from } }, { to: { gte: from } }] },
+          { AND: [{ from: { lte: to } }, { to: { gte: to } }] },
+          { AND: [{ from: { gte: from } }, { to: { lte: to } }] },
         ],
       },
     })
 
-    if (overlappingComment) {
-      return NextResponse.json(
-        { error: "Comment range overlaps with an existing comment for this teacher" },
-        { status: 400 },
-      )
+    if (overlappingComments.length > 0) {
+      return NextResponse.json({ error: "Comment range overlaps with existing ranges" }, { status: 400 })
     }
 
-    // Prepare update data
-    const updateData: any = {
-      from,
-      to,
-      comment,
-    }
-
-    // Update teacher if provided (admin only)
-    if (teacherId && decoded.role === "Admin") {
-      updateData.teacher = {
-        connect: { id: teacherId },
-      }
-    }
-
-    // Update class teacher comment
+    // Update comment
     const updatedComment = await prisma.classTeacherComment.update({
       where: { id: params.id },
-      data: updateData,
-      include: {
-        teacher: true,
+      data: {
+        from,
+        to,
+        comment,
+        teacher: teacherId ? { connect: { id: teacherId } } : { disconnect: true },
       },
     })
 
     return NextResponse.json(updatedComment)
   } catch (error) {
     console.error("Update class teacher comment error:", error)
-    return NextResponse.json({ error: "Something went wrong while updating class teacher comment" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while updating comment" }, { status: 500 })
   }
 }
 
@@ -135,32 +122,38 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
     const decoded = verifyToken(token)
 
-    if (!decoded) {
+    if (!decoded || (decoded.role !== "Admin" && decoded.role !== "Teacher")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Get the comment to check permissions
+    // If teacher, check if they own the comment
+    if (decoded.role === "Teacher") {
+      const comment = await prisma.classTeacherComment.findUnique({
+        where: { id: params.id },
+      })
+
+      if (!comment || comment.teacherId !== decoded.id) {
+        return NextResponse.json({ error: "Unauthorized to delete this comment" }, { status: 403 })
+      }
+    }
+
+    // Check if comment exists
     const comment = await prisma.classTeacherComment.findUnique({
       where: { id: params.id },
     })
 
     if (!comment) {
-      return NextResponse.json({ error: "Class teacher comment not found" }, { status: 404 })
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 })
     }
 
-    // Only allow the teacher who created the comment or an admin to delete it
-    if (decoded.role !== "Admin" && (decoded.role !== "Teacher" || decoded.id !== comment.teacherId)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    // Delete class teacher comment
+    // Delete comment
     await prisma.classTeacherComment.delete({
       where: { id: params.id },
     })
 
-    return NextResponse.json({ message: "Class teacher comment deleted successfully" })
+    return NextResponse.json({ message: "Comment deleted successfully" })
   } catch (error) {
     console.error("Delete class teacher comment error:", error)
-    return NextResponse.json({ error: "Something went wrong while deleting class teacher comment" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while deleting comment" }, { status: 500 })
   }
 }

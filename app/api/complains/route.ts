@@ -18,27 +18,38 @@ export async function GET(req: NextRequest) {
     }
 
     const schoolId = req.nextUrl.searchParams.get("schoolId")
-    const userId = req.nextUrl.searchParams.get("userId")
+    const studentId = req.nextUrl.searchParams.get("studentId")
 
     if (!schoolId) {
       return NextResponse.json({ error: "School ID is required" }, { status: 400 })
     }
 
     const whereClause: any = { schoolId }
-
-    if (userId) {
-      whereClause.userId = userId
+    if (studentId) {
+      whereClause.userId = studentId
     }
 
-    const complains = await prisma.complain.findMany({
+    // If student is making the request, only show their complaints
+    if (decoded.role === "Student") {
+      whereClause.userId = decoded.id
+    }
+
+    const complaints = await prisma.complain.findMany({
       where: whereClause,
-      include: {
-        user: true,
-      },
       orderBy: { date: "desc" },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            className: true,
+          },
+        },
+      },
     })
 
-    return NextResponse.json(complains)
+    return NextResponse.json(complaints)
   } catch (error) {
     console.error("Get complaints error:", error)
     return NextResponse.json({ error: "Something went wrong while fetching complaints" }, { status: 500 })
@@ -57,17 +68,22 @@ export async function POST(req: NextRequest) {
     const decoded = verifyToken(token)
 
     if (!decoded) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
     const body = await req.json()
-    const { complaint, date, userId, schoolId } = body
+    const { date, complaint, userId, schoolId } = body
+
+    // If student is making the request, they can only create complaints for themselves
+    if (decoded.role === "Student" && decoded.id !== userId) {
+      return NextResponse.json({ error: "Unauthorized to create complaint for another student" }, { status: 403 })
+    }
 
     // Create new complaint
-    const newComplain = await prisma.complain.create({
+    const newComplaint = await prisma.complain.create({
       data: {
-        complaint,
         date: new Date(date),
+        complaint,
         user: {
           connect: { id: userId },
         },
@@ -75,12 +91,9 @@ export async function POST(req: NextRequest) {
           connect: { id: schoolId },
         },
       },
-      include: {
-        user: true,
-      },
     })
 
-    return NextResponse.json(newComplain, { status: 201 })
+    return NextResponse.json(newComplaint, { status: 201 })
   } catch (error) {
     console.error("Create complaint error:", error)
     return NextResponse.json({ error: "Something went wrong while creating complaint" }, { status: 500 })

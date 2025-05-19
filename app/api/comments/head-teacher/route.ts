@@ -25,13 +25,13 @@ export async function GET(req: NextRequest) {
 
     const comments = await prisma.headTeacherComment.findMany({
       where: { schoolId },
-      orderBy: { from: "desc" },
+      orderBy: { from: "asc" },
     })
 
     return NextResponse.json(comments)
   } catch (error) {
     console.error("Get head teacher comments error:", error)
-    return NextResponse.json({ error: "Something went wrong while fetching head teacher comments" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while fetching comments" }, { status: 500 })
   }
 }
 
@@ -53,29 +53,28 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { from, to, comment, schoolId } = body
 
-    // Check for overlapping comment ranges
-    const overlappingComment = await prisma.headTeacherComment.findFirst({
+    // Validate input
+    if (from >= to) {
+      return NextResponse.json({ error: "From value must be less than To value" }, { status: 400 })
+    }
+
+    // Check for overlapping ranges
+    const overlappingComments = await prisma.headTeacherComment.findMany({
       where: {
         schoolId,
         OR: [
-          {
-            AND: [{ from: { lte: from } }, { to: { gte: from } }],
-          },
-          {
-            AND: [{ from: { lte: to } }, { to: { gte: to } }],
-          },
-          {
-            AND: [{ from: { gte: from } }, { to: { lte: to } }],
-          },
+          { AND: [{ from: { lte: from } }, { to: { gte: from } }] },
+          { AND: [{ from: { lte: to } }, { to: { gte: to } }] },
+          { AND: [{ from: { gte: from } }, { to: { lte: to } }] },
         ],
       },
     })
 
-    if (overlappingComment) {
-      return NextResponse.json({ error: "Comment range overlaps with an existing comment" }, { status: 400 })
+    if (overlappingComments.length > 0) {
+      return NextResponse.json({ error: "Comment range overlaps with existing ranges" }, { status: 400 })
     }
 
-    // Create new head teacher comment
+    // Create new comment
     const newComment = await prisma.headTeacherComment.create({
       data: {
         from,
@@ -90,6 +89,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(newComment, { status: 201 })
   } catch (error) {
     console.error("Create head teacher comment error:", error)
-    return NextResponse.json({ error: "Something went wrong while creating head teacher comment" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while creating comment" }, { status: 500 })
   }
 }

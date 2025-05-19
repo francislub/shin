@@ -6,7 +6,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   BookOpen,
-  Calendar,
+  Clock,
   ChevronRight,
   GraduationCap,
   LayoutDashboard,
@@ -21,6 +21,11 @@ import {
   School,
   BookOpenCheck,
   ClipboardList,
+  Calendar,
+  UserPlus,
+  MessageCircle,
+  Award,
+  AlertCircle,
 } from "lucide-react"
 
 interface SidebarProps {
@@ -43,19 +48,23 @@ export function Sidebar({ className, onClose }: SidebarProps) {
       case "Admin":
         return [
           { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+          { href: "/admin/terms", label: "Terms", icon: Calendar },
           { href: "/admin/students", label: "Students", icon: Users },
           { href: "/admin/teachers", label: "Teachers", icon: GraduationCap },
-          { href: "/admin/parents", label: "Parents", icon: Users },
+          { href: "/admin/parents", label: "Parents", icon: UserPlus },
           { href: "/admin/classes", label: "Classes", icon: BookOpen },
           { href: "/admin/subjects", label: "Subjects", icon: BookOpenCheck },
           { href: "/admin/exams", label: "Exams", icon: ClipboardList },
-          { href: "/admin/attendance", label: "Attendance", icon: Calendar },
+          { href: "/admin/attendance", label: "Attendance", icon: Clock },
           { href: "/admin/report-cards", label: "Report Cards", icon: FileText },
           { href: "/admin/payments", label: "Payments", icon: CreditCard },
           { href: "/admin/notices", label: "Notices", icon: Bell },
+          { href: "/admin/head-teacher-comments", label: "HT Comments", icon: MessageCircle },
+          { href: "/admin/gradings", label: "Grading", icon: Award },
           { href: "/admin/messages", label: "Messages", icon: MessageSquare },
           { href: "/admin/profile", label: "Profile", icon: User },
           { href: "/admin/settings", label: "Settings", icon: Settings },
+          { href: "/admin/complaints", label: "Complaints", icon: AlertCircle },
         ]
       case "Teacher":
         return [
@@ -63,7 +72,7 @@ export function Sidebar({ className, onClose }: SidebarProps) {
           { href: "/teacher/students", label: "Students", icon: Users },
           { href: "/teacher/classes", label: "Classes", icon: BookOpen },
           { href: "/teacher/subjects", label: "Subjects", icon: BookOpenCheck },
-          { href: "/teacher/attendance", label: "Attendance", icon: Calendar },
+          { href: "/teacher/attendance", label: "Attendance", icon: Clock },
           { href: "/teacher/exams", label: "Exams", icon: ClipboardList },
           { href: "/teacher/report-cards", label: "Report Cards", icon: FileText },
           { href: "/teacher/notices", label: "Notices", icon: Bell },
@@ -74,18 +83,18 @@ export function Sidebar({ className, onClose }: SidebarProps) {
         return [
           { href: "/student/dashboard", label: "Dashboard", icon: LayoutDashboard },
           { href: "/student/subjects", label: "Subjects", icon: BookOpen },
-          { href: "/student/attendance", label: "Attendance", icon: Calendar },
+          { href: "/student/attendance", label: "Attendance", icon: Clock },
           { href: "/student/exams", label: "Exams", icon: ClipboardList },
           { href: "/student/results", label: "Results", icon: FileText },
           { href: "/student/notices", label: "Notices", icon: Bell },
-          { href: "/student/complaints", label: "Complaints", icon: MessageSquare },
+          { href: "/student/complaints", label: "Complaints", icon: AlertCircle },
           { href: "/student/profile", label: "Profile", icon: User },
         ]
       case "Parent":
         return [
           { href: "/parent/dashboard", label: "Dashboard", icon: LayoutDashboard },
           { href: "/parent/children", label: "Children", icon: Users },
-          { href: "/parent/attendance", label: "Attendance", icon: Calendar },
+          { href: "/parent/attendance", label: "Attendance", icon: Clock },
           { href: "/parent/results", label: "Results", icon: FileText },
           { href: "/parent/notices", label: "Notices", icon: Bell },
           { href: "/parent/payments", label: "Payments", icon: CreditCard },

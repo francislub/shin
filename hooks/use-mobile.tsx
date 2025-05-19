@@ -2,25 +2,21 @@
 
 import { useState, useEffect } from "react"
 
-const MOBILE_BREAKPOINT = 768
+const MOBILE_BREAKPOINT = 1024 // lg breakpoint in Tailwind
 
-export function useMobile() {
+export function useMobile(): boolean {
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const checkIfMobile = () => {
-        setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-      }
-
-      checkIfMobile()
-
-      window.addEventListener("resize", checkIfMobile)
-
-      return () => {
-        window.removeEventListener("resize", checkIfMobile)
-      }
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     }
+
+    checkMobile()
+
+    window.addEventListener("resize", checkMobile)
+
+    return () => window.removeEventListener("resize", checkMobile)
   }, [])
 
   return isMobile

@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "School ID is required" }, { status: 400 })
     }
 
+    console.log(`Fetching terms for school: ${schoolId}`)
     const terms = await prisma.term.findMany({
       where: { schoolId },
       orderBy: { createdAt: "desc" },
@@ -53,6 +54,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { termName, nextTermStarts, nextTermEnds, year, schoolId } = body
 
+    // Validate required fields
+    if (!termName || !nextTermStarts || !nextTermEnds || !year || !schoolId) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    console.log("Creating term with data:", body)
+
     // Check if there's already an active term
     if (body.status === "Active") {
       const activeTerms = await prisma.term.findMany({
@@ -64,6 +72,7 @@ export async function POST(req: NextRequest) {
 
       // If there are active terms, update them to inactive
       if (activeTerms.length > 0) {
+        console.log("Setting existing active terms to inactive")
         await prisma.term.updateMany({
           where: {
             schoolId,
@@ -90,9 +99,15 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    console.log("Term created successfully:", newTerm)
     return NextResponse.json(newTerm, { status: 201 })
   } catch (error) {
     console.error("Create term error:", error)
-    return NextResponse.json({ error: "Something went wrong while creating term" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: `Something went wrong while creating term: ${error instanceof Error ? error.message : "Unknown error"}`,
+      },
+      { status: 500 },
+    )
   }
 }

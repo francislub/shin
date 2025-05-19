@@ -22,13 +22,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     })
 
     if (!comment) {
-      return NextResponse.json({ error: "Head teacher comment not found" }, { status: 404 })
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 })
     }
 
     return NextResponse.json(comment)
   } catch (error) {
     console.error("Get head teacher comment error:", error)
-    return NextResponse.json({ error: "Something went wrong while fetching head teacher comment" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while fetching comment" }, { status: 500 })
   }
 }
 
@@ -50,30 +50,29 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const body = await req.json()
     const { from, to, comment, schoolId } = body
 
-    // Check for overlapping comment ranges (excluding the current comment)
-    const overlappingComment = await prisma.headTeacherComment.findFirst({
+    // Validate input
+    if (from >= to) {
+      return NextResponse.json({ error: "From value must be less than To value" }, { status: 400 })
+    }
+
+    // Check for overlapping ranges (excluding the current comment)
+    const overlappingComments = await prisma.headTeacherComment.findMany({
       where: {
-        id: { not: params.id },
         schoolId,
+        id: { not: params.id },
         OR: [
-          {
-            AND: [{ from: { lte: from } }, { to: { gte: from } }],
-          },
-          {
-            AND: [{ from: { lte: to } }, { to: { gte: to } }],
-          },
-          {
-            AND: [{ from: { gte: from } }, { to: { lte: to } }],
-          },
+          { AND: [{ from: { lte: from } }, { to: { gte: from } }] },
+          { AND: [{ from: { lte: to } }, { to: { gte: to } }] },
+          { AND: [{ from: { gte: from } }, { to: { lte: to } }] },
         ],
       },
     })
 
-    if (overlappingComment) {
-      return NextResponse.json({ error: "Comment range overlaps with an existing comment" }, { status: 400 })
+    if (overlappingComments.length > 0) {
+      return NextResponse.json({ error: "Comment range overlaps with existing ranges" }, { status: 400 })
     }
 
-    // Update head teacher comment
+    // Update comment
     const updatedComment = await prisma.headTeacherComment.update({
       where: { id: params.id },
       data: {
@@ -86,7 +85,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json(updatedComment)
   } catch (error) {
     console.error("Update head teacher comment error:", error)
-    return NextResponse.json({ error: "Something went wrong while updating head teacher comment" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while updating comment" }, { status: 500 })
   }
 }
 
@@ -111,17 +110,17 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     })
 
     if (!comment) {
-      return NextResponse.json({ error: "Head teacher comment not found" }, { status: 404 })
+      return NextResponse.json({ error: "Comment not found" }, { status: 404 })
     }
 
-    // Delete head teacher comment
+    // Delete comment
     await prisma.headTeacherComment.delete({
       where: { id: params.id },
     })
 
-    return NextResponse.json({ message: "Head teacher comment deleted successfully" })
+    return NextResponse.json({ message: "Comment deleted successfully" })
   } catch (error) {
     console.error("Delete head teacher comment error:", error)
-    return NextResponse.json({ error: "Something went wrong while deleting head teacher comment" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while deleting comment" }, { status: 500 })
   }
 }

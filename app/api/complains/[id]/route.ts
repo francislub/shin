@@ -17,18 +17,30 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    const complain = await prisma.complain.findUnique({
+    const complaint = await prisma.complain.findUnique({
       where: { id: params.id },
       include: {
-        user: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            className: true,
+          },
+        },
       },
     })
 
-    if (!complain) {
+    if (!complaint) {
       return NextResponse.json({ error: "Complaint not found" }, { status: 404 })
     }
 
-    return NextResponse.json(complain)
+    // If student is making the request, they can only view their own complaints
+    if (decoded.role === "Student" && complaint.userId !== decoded.id) {
+      return NextResponse.json({ error: "Unauthorized to view this complaint" }, { status: 403 })
+    }
+
+    return NextResponse.json(complaint)
   } catch (error) {
     console.error("Get complaint error:", error)
     return NextResponse.json({ error: "Something went wrong while fetching complaint" }, { status: 500 })
@@ -47,39 +59,36 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const decoded = verifyToken(token)
 
     if (!decoded) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    // Check if complaint exists and belongs to the user
-    const complain = await prisma.complain.findUnique({
+    // Get the existing complaint
+    const existingComplaint = await prisma.complain.findUnique({
       where: { id: params.id },
     })
 
-    if (!complain) {
+    if (!existingComplaint) {
       return NextResponse.json({ error: "Complaint not found" }, { status: 404 })
     }
 
-    // Only allow the student who created the complaint or an admin to update it
-    if (decoded.role !== "Admin" && decoded.id !== complain.userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    // If student is making the request, they can only update their own complaints
+    if (decoded.role === "Student" && existingComplaint.userId !== decoded.id) {
+      return NextResponse.json({ error: "Unauthorized to update this complaint" }, { status: 403 })
     }
 
     const body = await req.json()
-    const { complaint, date } = body
+    const { date, complaint } = body
 
     // Update complaint
-    const updatedComplain = await prisma.complain.update({
+    const updatedComplaint = await prisma.complain.update({
       where: { id: params.id },
       data: {
-        complaint,
         date: new Date(date),
-      },
-      include: {
-        user: true,
+        complaint,
       },
     })
 
-    return NextResponse.json(updatedComplain)
+    return NextResponse.json(updatedComplaint)
   } catch (error) {
     console.error("Update complaint error:", error)
     return NextResponse.json({ error: "Something went wrong while updating complaint" }, { status: 500 })
@@ -98,21 +107,21 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     const decoded = verifyToken(token)
 
     if (!decoded) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    // Check if complaint exists
-    const complain = await prisma.complain.findUnique({
+    // Get the existing complaint
+    const existingComplaint = await prisma.complain.findUnique({
       where: { id: params.id },
     })
 
-    if (!complain) {
+    if (!existingComplaint) {
       return NextResponse.json({ error: "Complaint not found" }, { status: 404 })
     }
 
-    // Only allow the student who created the complaint or an admin to delete it
-    if (decoded.role !== "Admin" && decoded.id !== complain.userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    // If student is making the request, they can only delete their own complaints
+    if (decoded.role === "Student" && existingComplaint.userId !== decoded.id) {
+      return NextResponse.json({ error: "Unauthorized to delete this complaint" }, { status: 403 })
     }
 
     // Delete complaint

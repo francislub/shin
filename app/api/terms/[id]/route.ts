@@ -17,8 +17,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
+    const termId = params.id
+
     const term = await prisma.term.findUnique({
-      where: { id: params.id },
+      where: { id: termId },
     })
 
     if (!term) {
@@ -47,15 +49,31 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const termId = params.id
     const body = await req.json()
     const { termName, nextTermStarts, nextTermEnds, year, status, schoolId } = body
 
-    // If updating to active status, make all other terms inactive
-    if (status === "Active") {
+    // Validate required fields
+    if (!termName || !nextTermStarts || !nextTermEnds || !year || !schoolId) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    // Check if term exists
+    const existingTerm = await prisma.term.findUnique({
+      where: { id: termId },
+    })
+
+    if (!existingTerm) {
+      return NextResponse.json({ error: "Term not found" }, { status: 404 })
+    }
+
+    // If setting to active, update other terms to inactive
+    if (status === "Active" && existingTerm.status !== "Active") {
       await prisma.term.updateMany({
         where: {
           schoolId,
-          id: { not: params.id },
+          status: "Active",
+          id: { not: termId },
         },
         data: {
           status: "Inactive",
@@ -65,7 +83,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     // Update term
     const updatedTerm = await prisma.term.update({
-      where: { id: params.id },
+      where: { id: termId },
       data: {
         termName,
         nextTermStarts,
@@ -97,26 +115,25 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const termId = params.id
+
     // Check if term exists
-    const term = await prisma.term.findUnique({
-      where: { id: params.id },
-      include: {
-        sclasses: true,
-      },
+    const existingTerm = await prisma.term.findUnique({
+      where: { id: termId },
     })
 
-    if (!term) {
+    if (!existingTerm) {
       return NextResponse.json({ error: "Term not found" }, { status: 404 })
     }
 
-    // Check if term has associated classes
-    if (term.sclasses.length > 0) {
-      return NextResponse.json({ error: "Cannot delete term with associated classes" }, { status: 400 })
+    // Check if term is active
+    if (existingTerm.status === "Active") {
+      return NextResponse.json({ error: "Cannot delete an active term" }, { status: 400 })
     }
 
     // Delete term
     await prisma.term.delete({
-      where: { id: params.id },
+      where: { id: termId },
     })
 
     return NextResponse.json({ message: "Term deleted successfully" })

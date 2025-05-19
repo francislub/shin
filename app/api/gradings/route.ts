@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
     const gradings = await prisma.grading.findMany({
       where: { schoolId },
-      orderBy: { from: "desc" },
+      orderBy: { from: "asc" },
     })
 
     return NextResponse.json(gradings)
@@ -53,26 +53,25 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { from, to, grade, comment, schoolId } = body
 
-    // Check for overlapping grade ranges
-    const overlappingGrade = await prisma.grading.findFirst({
+    // Validate input
+    if (from >= to) {
+      return NextResponse.json({ error: "From value must be less than To value" }, { status: 400 })
+    }
+
+    // Check for overlapping ranges
+    const overlappingGradings = await prisma.grading.findMany({
       where: {
         schoolId,
         OR: [
-          {
-            AND: [{ from: { lte: from } }, { to: { gte: from } }],
-          },
-          {
-            AND: [{ from: { lte: to } }, { to: { gte: to } }],
-          },
-          {
-            AND: [{ from: { gte: from } }, { to: { lte: to } }],
-          },
+          { AND: [{ from: { lte: from } }, { to: { gte: from } }] },
+          { AND: [{ from: { lte: to } }, { to: { gte: to } }] },
+          { AND: [{ from: { gte: from } }, { to: { lte: to } }] },
         ],
       },
     })
 
-    if (overlappingGrade) {
-      return NextResponse.json({ error: "Grade range overlaps with an existing grade" }, { status: 400 })
+    if (overlappingGradings.length > 0) {
+      return NextResponse.json({ error: "Grading range overlaps with existing ranges" }, { status: 400 })
     }
 
     // Create new grading
