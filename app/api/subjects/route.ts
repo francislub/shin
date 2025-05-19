@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { verifyToken } from "@/lib/auth"
 
-// Get all subjects for a school or class
+// Get all subjects for a school
 export async function GET(req: NextRequest) {
   try {
     const token = req.headers.get("authorization")?.split(" ")[1]
@@ -18,20 +18,13 @@ export async function GET(req: NextRequest) {
     }
 
     const schoolId = req.nextUrl.searchParams.get("schoolId")
-    const sclassId = req.nextUrl.searchParams.get("sclassId")
 
     if (!schoolId) {
       return NextResponse.json({ error: "School ID is required" }, { status: 400 })
     }
 
-    const whereClause: any = { schoolId }
-
-    if (sclassId) {
-      whereClause.sclassId = sclassId
-    }
-
     const subjects = await prisma.subject.findMany({
-      where: whereClause,
+      where: { schoolId },
       include: {
         sclassName: true,
         teacher: true,
@@ -64,37 +57,34 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { subName, subCode, sessions, sclassId, teacherId, schoolId } = body
 
-    // Check if subject already exists for this class
-    const existingSubject = await prisma.subject.findFirst({
-      where: {
-        subName,
-        sclassId,
-        schoolId,
-      },
-    })
+    // Validate required fields
+    if (!subName || !subCode || !sessions || !sclassId || !schoolId) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
 
-    if (existingSubject) {
-      return NextResponse.json({ error: "Subject with this name already exists for this class" }, { status: 400 })
+    // Create subject data
+    const subjectData: any = {
+      subName,
+      subCode,
+      sessions: String(sessions), // Convert to string to match schema
+      sclassName: {
+        connect: { id: sclassId },
+      },
+      school: {
+        connect: { id: schoolId },
+      },
+    }
+
+    // Add teacher if provided
+    if (teacherId) {
+      subjectData.teacher = {
+        connect: { id: teacherId },
+      }
     }
 
     // Create new subject
     const newSubject = await prisma.subject.create({
-      data: {
-        subName,
-        subCode,
-        sessions,
-        sclassName: {
-          connect: { id: sclassId },
-        },
-        ...(teacherId && {
-          teacher: {
-            connect: { id: teacherId },
-          },
-        }),
-        school: {
-          connect: { id: schoolId },
-        },
-      },
+      data: subjectData,
       include: {
         sclassName: true,
         teacher: true,

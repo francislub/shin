@@ -376,6 +376,7 @@ export default function AdminSubjects() {
     const teacher = teachers.find((t) => t.id === teacherId)
     return teacher ? teacher.name : "Unknown Teacher"
   }
+  
 
   const filteredSubjects = subjects.filter(
     (subject) =>

@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
-import { verifyToken, hashPassword } from "@/lib/auth"
+import { verifyToken } from "@/lib/auth"
 
-// Get a specific teacher
+// Get a specific subject
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const token = req.headers.get("authorization")?.split(" ")[1]
@@ -17,30 +17,28 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    const teacher = await prisma.teacher.findUnique({
-      where: { id: params.id },
+    const id = params.id
+
+    const subject = await prisma.subject.findUnique({
+      where: { id },
       include: {
-        teachSclass: true,
-        teachSubject: true,
-        classTeacherComments: true,
+        sclassName: true,
+        teacher: true,
       },
     })
 
-    if (!teacher) {
-      return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
+    if (!subject) {
+      return NextResponse.json({ error: "Subject not found" }, { status: 404 })
     }
 
-    // Remove password from response
-    const { password, verificationToken, ...teacherData } = teacher as any
-
-    return NextResponse.json(teacherData)
+    return NextResponse.json(subject)
   } catch (error) {
-    console.error("Get teacher error:", error)
-    return NextResponse.json({ error: "Something went wrong while fetching teacher" }, { status: 500 })
+    console.error("Get subject error:", error)
+    return NextResponse.json({ error: "Something went wrong while fetching subject" }, { status: 500 })
   }
 }
 
-// Update a teacher
+// Update a subject
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const token = req.headers.get("authorization")?.split(" ")[1]
@@ -51,59 +49,57 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     const decoded = verifyToken(token)
 
-    if (!decoded || (decoded.role !== "Admin" && decoded.id !== params.id)) {
+    if (!decoded || decoded.role !== "Admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const body = await req.json()
-    const { name, email, password, teachSclassId, teachSubjectId } = body
+    const { subName, subCode, sessions, sclassId, teacherId } = body
+    const id = params.id
 
     // Prepare update data
     const updateData: any = {}
 
-    if (name) updateData.name = name
-    if (email) updateData.email = email
-
-    // Hash password if provided
-    if (password) {
-      updateData.password = await hashPassword(password)
-    }
+    if (subName) updateData.subName = subName
+    if (subCode) updateData.subCode = subCode
+    if (sessions !== undefined) updateData.sessions = String(sessions)
 
     // Update class if provided
-    if (teachSclassId) {
-      updateData.teachSclass = {
-        connect: { id: teachSclassId },
+    if (sclassId) {
+      updateData.sclassName = {
+        connect: { id: sclassId },
       }
     }
 
-    // Update subject if provided
-    if (teachSubjectId) {
-      updateData.teachSubject = {
-        connect: { id: teachSubjectId },
+    // Update teacher if provided
+    if (teacherId) {
+      updateData.teacher = {
+        connect: { id: teacherId },
+      }
+    } else if (teacherId === null) {
+      updateData.teacher = {
+        disconnect: true,
       }
     }
 
-    // Update teacher
-    const updatedTeacher = await prisma.teacher.update({
-      where: { id: params.id },
+    // Update subject
+    const updatedSubject = await prisma.subject.update({
+      where: { id },
       data: updateData,
       include: {
-        teachSclass: true,
-        teachSubject: true,
+        sclassName: true,
+        teacher: true,
       },
     })
 
-    // Remove password from response
-    const { password: _, verificationToken, ...teacherData } = updatedTeacher as any
-
-    return NextResponse.json(teacherData)
+    return NextResponse.json(updatedSubject)
   } catch (error) {
-    console.error("Update teacher error:", error)
-    return NextResponse.json({ error: "Something went wrong while updating teacher" }, { status: 500 })
+    console.error("Update subject error:", error)
+    return NextResponse.json({ error: "Something went wrong while updating subject" }, { status: 500 })
   }
 }
 
-// Delete a teacher
+// Delete a subject
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const token = req.headers.get("authorization")?.split(" ")[1]
@@ -118,39 +114,25 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Check if teacher exists
-    const teacher = await prisma.teacher.findUnique({
-      where: { id: params.id },
-      include: {
-        classTeacherComments: true,
-      },
+    const id = params.id
+
+    // Check if subject exists
+    const subject = await prisma.subject.findUnique({
+      where: { id },
     })
 
-    if (!teacher) {
-      return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
+    if (!subject) {
+      return NextResponse.json({ error: "Subject not found" }, { status: 404 })
     }
 
-    // Delete associated comments
-    if (teacher.classTeacherComments.length > 0) {
-      await prisma.classTeacherComment.deleteMany({
-        where: { teacherId: params.id },
-      })
-    }
-
-    // Update subjects taught by this teacher
-    await prisma.subject.updateMany({
-      where: { teacherId: params.id },
-      data: { teacherId: null },
+    // Delete subject
+    await prisma.subject.delete({
+      where: { id },
     })
 
-    // Delete teacher
-    await prisma.teacher.delete({
-      where: { id: params.id },
-    })
-
-    return NextResponse.json({ message: "Teacher deleted successfully" })
+    return NextResponse.json({ message: "Subject deleted successfully" })
   } catch (error) {
-    console.error("Delete teacher error:", error)
-    return NextResponse.json({ error: "Something went wrong while deleting teacher" }, { status: 500 })
+    console.error("Delete subject error:", error)
+    return NextResponse.json({ error: "Something went wrong while deleting subject" }, { status: 500 })
   }
 }

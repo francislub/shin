@@ -73,31 +73,57 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Teacher with this email already exists" }, { status: 400 })
     }
 
+    // Check if subject is already assigned to another teacher
+    if (teachSubjectId) {
+      const existingTeacherWithSubject = await prisma.teacher.findFirst({
+        where: { teachSubjectId },
+      })
+
+      if (existingTeacherWithSubject) {
+        return NextResponse.json({ error: "This subject is already assigned to another teacher" }, { status: 400 })
+      }
+    }
+
     // Hash password
     const hashedPassword = await hashPassword(password)
 
     // Generate verification token
     const verificationToken = generateVerificationToken()
 
-    // Create new teacher
+    // Create teacher data object with required fields
+    const teacherDataPayload = {
+      name,
+      email,
+      password: hashedPassword,
+      verificationToken,
+      school: {
+        connect: { id: schoolId },
+      },
+      teachSclass: {
+        connect: { id: teachSclassId },
+      },
+    }
+
+    // Create new teacher - handle subject connection separately to avoid unique constraint issues
     const newTeacher = await prisma.teacher.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        verificationToken,
-        teachSclass: {
-          connect: { id: teachSclassId },
-        },
-        ...(teachSubjectId && {
+      data: teacherDataPayload,
+    })
+
+    // If a subject ID was provided, update the teacher to connect it
+    if (teachSubjectId) {
+      await prisma.teacher.update({
+        where: { id: newTeacher.id },
+        data: {
           teachSubject: {
             connect: { id: teachSubjectId },
           },
-        }),
-        school: {
-          connect: { id: schoolId },
         },
-      },
+      })
+    }
+
+    // Fetch the complete teacher data with relations
+    const completeTeacher = await prisma.teacher.findUnique({
+      where: { id: newTeacher.id },
       include: {
         teachSclass: true,
         teachSubject: true,
@@ -114,11 +140,11 @@ export async function POST(req: NextRequest) {
     })
 
     // Return success response without sensitive data
-    const { password: _, verificationToken: __, ...teacherData } = newTeacher as any
+    const { password: _, verificationToken: __, ...teacherDataSanitized } = completeTeacher as any
 
     return NextResponse.json(
       {
-        ...teacherData,
+        ...teacherDataSanitized,
         message: "Teacher created successfully. Verification email sent.",
       },
       { status: 201 },
