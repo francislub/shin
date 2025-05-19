@@ -88,11 +88,17 @@ export default function AdminTerms() {
 
         if (!token || !schoolId) {
           console.log("Missing authentication tokens")
+          toast({
+            variant: "destructive",
+            title: "Authentication Error",
+            description: "Missing authentication data. Please log in again.",
+          })
           setIsLoading(false)
+          router.push("/login")
           return
         }
 
-        console.log("Fetching terms data...")
+        console.log("Fetching terms data with schoolId:", schoolId)
         const response = await fetch(`/api/terms?schoolId=${schoolId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -102,6 +108,18 @@ export default function AdminTerms() {
         if (!response.ok) {
           const errorText = await response.text()
           console.error("API error response:", errorText)
+
+          // If unauthorized, redirect to login
+          if (response.status === 401) {
+            toast({
+              variant: "destructive",
+              title: "Session Expired",
+              description: "Your session has expired. Please log in again.",
+            })
+            router.push("/login")
+            return
+          }
+
           throw new Error(`Failed to fetch terms: ${response.status} ${response.statusText}`)
         }
 
@@ -121,7 +139,7 @@ export default function AdminTerms() {
     }
 
     fetchTerms()
-  }, [user, authLoading, toast])
+  }, [user, authLoading, toast, router])
 
   const validateForm = () => {
     const errors = {
@@ -257,27 +275,19 @@ export default function AdminTerms() {
         }),
       })
 
-      const responseText = await response.text()
-      console.log(`API Response (${response.status}):`, responseText)
-
       if (!response.ok) {
+        const errorText = await response.text()
         let errorMessage = "Unknown error occurred"
         try {
-          const errorData = JSON.parse(responseText)
+          const errorData = JSON.parse(errorText)
           errorMessage = errorData.error || `Failed to ${selectedTerm ? "update" : "create"} term`
         } catch (e) {
-          errorMessage = `Server returned: ${responseText}`
+          errorMessage = `Server returned: ${errorText}`
         }
         throw new Error(errorMessage)
       }
 
-      let updatedTerm
-      try {
-        updatedTerm = JSON.parse(responseText)
-      } catch (e) {
-        console.error("Failed to parse response as JSON:", e)
-        throw new Error("Invalid response from server")
-      }
+      const updatedTerm = await response.json()
 
       console.log("Term data response:", updatedTerm)
 

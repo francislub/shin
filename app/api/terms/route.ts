@@ -8,13 +8,13 @@ export async function GET(req: NextRequest) {
     const token = req.headers.get("authorization")?.split(" ")[1]
 
     if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized - No token provided" }, { status: 401 })
     }
 
     const decoded = verifyToken(token)
 
     if (!decoded) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized - Invalid token" }, { status: 401 })
     }
 
     const schoolId = req.nextUrl.searchParams.get("schoolId")
@@ -23,7 +23,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "School ID is required" }, { status: 400 })
     }
 
-    console.log(`Fetching terms for school: ${schoolId}`)
+    console.log(`Fetching terms for school: ${schoolId} with user role: ${decoded.role}`)
+
+    // Verify that the user has access to this school's data
+    if (decoded.role === "Admin" && decoded.id !== schoolId) {
+      console.warn(`Admin ${decoded.id} attempted to access school ${schoolId} data`)
+      return NextResponse.json({ error: "Unauthorized access to school data" }, { status: 403 })
+    }
+
     const terms = await prisma.term.findMany({
       where: { schoolId },
       orderBy: { createdAt: "desc" },

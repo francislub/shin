@@ -4,15 +4,21 @@ import { verifyPassword, generateToken } from "@/lib/auth"
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { email, password, role } = body
+    const { email, password, role } = await req.json()
 
-    console.log("Login attempt:", { email, role })
+    // Validate required fields
+    if (!email || !password || !role) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    // Normalize role for database queries
+    const normalizedRole = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase()
 
     let user = null
+    let schoolId = null
 
     // Find user based on role
-    if (role === "Admin") {
+    if (normalizedRole === "Admin") {
       user = await prisma.admin.findUnique({
         where: { email },
         select: {
@@ -23,7 +29,7 @@ export async function POST(req: NextRequest) {
           verified: true,
         },
       })
-    } else if (role === "Teacher") {
+    } else if (normalizedRole === "Teacher") {
       user = await prisma.teacher.findUnique({
         where: { email },
         select: {
@@ -32,11 +38,14 @@ export async function POST(req: NextRequest) {
           name: true,
           password: true,
           verified: true,
+          schoolId: true,
         },
       })
-    } else if (role === "Student") {
-      // For students, we need to handle differently as they login with roll number
-      user = await prisma.student.findFirst({
+      if (user) {
+        schoolId = user.schoolId
+      }
+    } else if (normalizedRole === "Student") {
+      user = await prisma.student.findUnique({
         where: { rollNum: email },
         select: {
           id: true,
@@ -44,9 +53,13 @@ export async function POST(req: NextRequest) {
           name: true,
           password: true,
           verified: true,
+          schoolId: true,
         },
       })
-    } else if (role === "Parent") {
+      if (user) {
+        schoolId = user.schoolId
+      }
+    } else if (normalizedRole === "Parent") {
       user = await prisma.parent.findUnique({
         where: { email },
         select: {
@@ -55,65 +68,59 @@ export async function POST(req: NextRequest) {
           name: true,
           password: true,
           verified: true,
+          schoolId: true,
         },
       })
+      if (user) {
+        schoolId = user.schoolId
+      }
+    } else {
+      return NextResponse.json({ error: "Invalid role" }, { status: 400 })
     }
 
+    // Check if user exists
     if (!user) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
     }
 
-    console.log("User found:", {
-      id: user?.id,
-      name: user?.name,
-      verified: user?.verified,
-      email: user?.email || user?.rollNum,
-    })
-
-    // Check if user is verified
-    if (!user.verified) {
-      console.log("Login failed: User not verified", { id: user.id, role })
-      return NextResponse.json(
-        {
-          error: "Please verify your email before logging in",
-          verified: false,
-        },
-        { status: 401 },
-      )
-    }
-
     // Verify password
     const isPasswordValid = await verifyPassword(password, user.password)
-
     if (!isPasswordValid) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
     }
 
-    try {
-      // Generate JWT token - ensure role is stored exactly as provided
-      const token = generateToken({
+    // Check if user is verified (if applicable)
+    if (user.verified === false) {
+      return NextResponse.json({ error: "Account not verified. Please check your email." }, { status: 403 })
+    }
+
+    // Generate JWT token
+    const token = generateToken({
+      id: user.id,
+      name: user.name,
+      email: user.email || user.rollNum,
+      role: normalizedRole,
+    })
+
+    // Return user data and token
+    const responseData = {
+      user: {
         id: user.id,
         name: user.name,
         email: user.email || user.rollNum,
-        role: role, // Keep the exact role casing
-      })
-
-      // Return user data and token
-      return NextResponse.json({
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email || user.rollNum,
-          role, // Keep the exact role casing
-        },
-        token,
-      })
-    } catch (tokenError) {
-      console.error("Token generation error:", tokenError)
-      return NextResponse.json({ error: "Authentication error" }, { status: 500 })
+        role: normalizedRole,
+      },
+      token,
     }
+
+    // Add schoolId to response for non-admin users
+    if (schoolId) {
+      responseData.schoolId = schoolId
+    }
+
+    return NextResponse.json(responseData)
   } catch (error) {
     console.error("Login error:", error)
-    return NextResponse.json({ error: "Something went wrong during login" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 })
   }
 }

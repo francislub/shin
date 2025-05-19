@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
     // Get user data based on role
     const { id, role } = decoded
     let userData = null
+    let schoolId = null
 
     // Normalize role for database queries (case-sensitive match)
     const normalizedRole = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase()
@@ -36,6 +37,8 @@ export async function GET(req: NextRequest) {
           email: true,
         },
       })
+      // For admin, the schoolId is the admin's id
+      schoolId = id
     } else if (normalizedRole === "Teacher") {
       userData = await prisma.teacher.findUnique({
         where: { id },
@@ -43,8 +46,12 @@ export async function GET(req: NextRequest) {
           id: true,
           name: true,
           email: true,
+          schoolId: true,
         },
       })
+      if (userData) {
+        schoolId = userData.schoolId
+      }
     } else if (normalizedRole === "Student") {
       userData = await prisma.student.findUnique({
         where: { id },
@@ -52,8 +59,12 @@ export async function GET(req: NextRequest) {
           id: true,
           name: true,
           rollNum: true,
+          schoolId: true,
         },
       })
+      if (userData) {
+        schoolId = userData.schoolId
+      }
     } else if (normalizedRole === "Parent") {
       userData = await prisma.parent.findUnique({
         where: { id },
@@ -61,8 +72,12 @@ export async function GET(req: NextRequest) {
           id: true,
           name: true,
           email: true,
+          schoolId: true,
         },
       })
+      if (userData) {
+        schoolId = userData.schoolId
+      }
     }
 
     if (!userData) {
@@ -71,12 +86,19 @@ export async function GET(req: NextRequest) {
     }
 
     // Return user data with role (using the original role casing from the token)
-    return NextResponse.json({
+    const response = {
       id: userData.id,
       name: userData.name,
       email: userData.email || userData.rollNum,
       role,
-    })
+    }
+
+    // Add schoolId to the response
+    if (schoolId) {
+      response.schoolId = schoolId
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error("Verify token error:", error)
     return NextResponse.json({ error: "Authentication error" }, { status: 500 })

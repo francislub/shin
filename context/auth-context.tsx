@@ -20,7 +20,7 @@ interface AuthContextType {
   resetInactivityTimer: () => void
 }
 
-const INACTIVITY_TIMEOUT = 1800000; // 30 minutes in milliseconds
+const INACTIVITY_TIMEOUT = 1800000 // 30 minutes in milliseconds
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
@@ -29,17 +29,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const { toast } = useToast()
-  
+
   // Use refs for values that shouldn't trigger re-renders
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null)
   const isAuthenticatedRef = useRef(false)
-  
+
   // Function to reset the inactivity timer
   const resetInactivityTimer = () => {
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current)
     }
-    
+
     if (isAuthenticatedRef.current) {
       inactivityTimerRef.current = setTimeout(() => {
         toast({
@@ -50,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }, INACTIVITY_TIMEOUT)
     }
   }
-  
+
   // Internal logout function that doesn't depend on state or props
   const logoutInternal = () => {
     try {
@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }).catch(error => {
+        }).catch((error) => {
           console.error("Logout API error:", error)
         })
       }
@@ -71,21 +71,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem("token")
       localStorage.removeItem("userData")
       isAuthenticatedRef.current = false
-      
+
       // Clear the timer
       if (inactivityTimerRef.current) {
         clearTimeout(inactivityTimerRef.current)
         inactivityTimerRef.current = null
       }
-      
+
       // Update React state last to avoid triggering effects too early
       setUser(null)
-      
+
       // Navigate to login
       router.push("/login")
     }
   }
-  
+
   // Public logout function exposed through context
   const logout = () => {
     toast({
@@ -94,21 +94,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     logoutInternal()
   }
-  
+
   // Initial auth check
   useEffect(() => {
     const initialAuthCheck = async () => {
       try {
         const token = localStorage.getItem("token")
         const userData = localStorage.getItem("userData")
-        
+
         if (!token) {
           setUser(null)
           setIsLoading(false)
           isAuthenticatedRef.current = false
           return
         }
-        
+
         // Use cached data immediately if available
         if (userData) {
           try {
@@ -120,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.removeItem("userData")
           }
         }
-        
+
         // Verify with backend (but don't block UI on this)
         try {
           const response = await fetch("/api/auth/verify", {
@@ -128,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               Authorization: `Bearer ${token}`,
             },
           })
-          
+
           if (response.ok) {
             const userData = await response.json()
             setUser(userData)
@@ -149,67 +149,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false)
       }
     }
-    
+
     initialAuthCheck()
   }, []) // Empty dependency array - this effect runs once
-  
+
   // Set up activity tracking
   useEffect(() => {
     // Update ref when user state changes
     isAuthenticatedRef.current = !!user
-    
+
     // Only set up listeners if authenticated
     if (user) {
-      const activityEvents = ['mousedown', 'keypress', 'scroll', 'touchstart']
-      
+      const activityEvents = ["mousedown", "keypress", "scroll", "touchstart"]
+
       const handleUserActivity = () => {
         resetInactivityTimer()
       }
-      
+
       // Set initial timer
       resetInactivityTimer()
-      
+
       // Add event listeners
-      activityEvents.forEach(event => {
+      activityEvents.forEach((event) => {
         window.addEventListener(event, handleUserActivity)
       })
-      
+
       // Cleanup
       return () => {
         if (inactivityTimerRef.current) {
           clearTimeout(inactivityTimerRef.current)
         }
-        
-        activityEvents.forEach(event => {
+
+        activityEvents.forEach((event) => {
           window.removeEventListener(event, handleUserActivity)
         })
       }
     }
   }, [user]) // Only depends on user
-  
+
   const checkAuth = async (): Promise<boolean> => {
     if (isLoading) {
       // If still loading, wait for the initial auth check
       return isAuthenticatedRef.current
     }
-    
+
     try {
       const token = localStorage.getItem("token")
-      
+
       if (!token) {
         return false
       }
-      
+
       return isAuthenticatedRef.current
     } catch (error) {
       console.error("Check auth error:", error)
       return false
     }
   }
-  
+
   const login = async (email: string, password: string, role: string): Promise<boolean> => {
     setIsLoading(true)
-    
+
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -218,21 +218,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
         body: JSON.stringify({ email, password, role }),
       })
-      
+
       if (response.ok) {
         const data = await response.json()
-        
+
         // Save auth data
         localStorage.setItem("token", data.token)
         localStorage.setItem("userData", JSON.stringify(data.user))
-        
+
+        // Store the schoolId if the user is an admin
+        if (data.user.role === "Admin") {
+          localStorage.setItem("schoolId", data.user.id)
+        } else if (data.schoolId) {
+          localStorage.setItem("schoolId", data.schoolId)
+        }
+
         // Update state
         setUser(data.user)
         isAuthenticatedRef.current = true
-        
+
         // Reset inactivity timer
         resetInactivityTimer()
-        
+
         // Send login notification (don't block on this)
         fetch("/api/notifications/login", {
           method: "POST",
@@ -240,10 +247,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             "Content-Type": "application/json",
             Authorization: `Bearer ${data.token}`,
           },
-        }).catch(error => {
+        }).catch((error) => {
           console.error("Login notification error:", error)
         })
-        
+
         return true
       } else {
         const errorData = await response.json()
@@ -266,29 +273,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false)
     }
   }
-  
+
   const value = {
     user,
     isLoading,
     login,
     logout,
     checkAuth,
-    resetInactivityTimer
+    resetInactivityTimer,
   }
-  
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
   const context = useContext(AuthContext)
-  
+
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider")
   }
-  
+
   return context
 }
