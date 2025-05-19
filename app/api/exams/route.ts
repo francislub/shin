@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { verifyToken } from "@/lib/auth"
 
-// Get exam results for a student or class
+// Get exam results
 export async function GET(req: NextRequest) {
   try {
     const token = req.headers.get("authorization")?.split(" ")[1]
@@ -17,106 +17,71 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    const studentId = req.nextUrl.searchParams.get("studentId")
-    const sclassId = req.nextUrl.searchParams.get("sclassId")
+    const classId = req.nextUrl.searchParams.get("classId")
+    const subjectId = req.nextUrl.searchParams.get("subjectId")
     const examType = req.nextUrl.searchParams.get("examType")
+    const studentId = req.nextUrl.searchParams.get("studentId")
+    const teacherId = req.nextUrl.searchParams.get("teacherId")
 
-    if (!studentId && !sclassId) {
-      return NextResponse.json({ error: "Student ID or Class ID is required" }, { status: 400 })
-    }
-
-    if (!examType || !["bot", "mid", "end"].includes(examType)) {
-      return NextResponse.json({ error: "Valid exam type (bot, mid, end) is required" }, { status: 400 })
-    }
-
-    // Query parameters for filtering
     const whereClause: any = {}
 
+    if (classId) {
+      whereClause.classId = classId
+    }
+
+    if (subjectId) {
+      whereClause.subjectId = subjectId
+    }
+
+    if (examType) {
+      whereClause.examType = examType
+    }
+
     if (studentId) {
-      whereClause.id = studentId
+      whereClause.studentId = studentId
     }
 
-    if (sclassId) {
-      whereClause.sclassId = sclassId
+    if (teacherId) {
+      whereClause.teacherId = teacherId
     }
 
-    // Get students with exam results
-    const students = await prisma.student.findMany({
+    const examResults = await prisma.examResult.findMany({
       where: whereClause,
-      select: {
-        id: true,
-        name: true,
-        rollNum: true,
-        botExamResult: examType === "bot",
-        midExamResult: examType === "mid",
-        endExamResult: examType === "end",
-        sclass: {
+      include: {
+        student: {
           select: {
             id: true,
-            sclassName: true,
+            firstName: true,
+            lastName: true,
+            admissionNumber: true,
+          },
+        },
+        subject: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+        class: {
+          select: {
+            id: true,
+            name: true,
+            section: true,
           },
         },
       },
+      orderBy: [{ student: { firstName: "asc" } }, { student: { lastName: "asc" } }],
     })
 
-    // Get subjects for reference
-    const subjects = await prisma.subject.findMany({
-      select: {
-        id: true,
-        subName: true,
-        subCode: true,
-      },
-    })
-
-    // Map subject IDs to names for better readability
-    const subjectMap = subjects.reduce(
-      (map, subject) => {
-        map[subject.id] = {
-          name: subject.subName,
-          code: subject.subCode,
-        }
-        return map
-      },
-      {} as Record<string, { name: string; code: string }>,
-    )
-
-    // Format the results
-    const result = students.map((student) => {
-      let examResults: any[] = []
-
-      if (examType === "bot") {
-        examResults = student.botExamResult || []
-      } else if (examType === "mid") {
-        examResults = student.midExamResult || []
-      } else if (examType === "end") {
-        examResults = student.endExamResult || []
-      }
-
-      // Add subject names to results
-      const formattedResults = examResults.map((result) => ({
-        ...result,
-        subjectName: subjectMap[result.subName]?.name || "Unknown Subject",
-        subjectCode: subjectMap[result.subName]?.code || "N/A",
-      }))
-
-      return {
-        id: student.id,
-        name: student.name,
-        rollNum: student.rollNum,
-        sclass: student.sclass,
-        examResults: formattedResults,
-        totalMarks: formattedResults.reduce((sum, result) => sum + (result.marksObtained || 0), 0),
-      }
-    })
-
-    return NextResponse.json(result)
+    return NextResponse.json(examResults)
   } catch (error) {
     console.error("Get exam results error:", error)
     return NextResponse.json({ error: "Something went wrong while fetching exam results" }, { status: 500 })
   }
 }
 
-// Record exam results for students
+// Create new exam results
 export async function POST(req: NextRequest) {
   try {
     const token = req.headers.get("authorization")?.split(" ")[1]
@@ -132,90 +97,117 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { examType, subjectId, resultsData } = body
+    const { classId, subjectId, examType, teacherId, totalMarks, examResults } = body
 
-    if (!examType || !["bot", "mid", "end"].includes(examType)) {
-      return NextResponse.json({ error: "Valid exam type (bot, mid, end) is required" }, { status: 400 })
+    if (!classId || !subjectId || !examType || !teacherId || !totalMarks || !examResults) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    if (!subjectId || !resultsData || !Array.isArray(resultsData)) {
-      return NextResponse.json({ error: "Invalid exam results data" }, { status: 400 })
-    }
+    // Create exam results for each student
+    const createdResults = await Promise.all(
+      examResults.map(async (result: { studentId: string; marks: number }) => {
+        // Calculate grade based on marks percentage
+        const percentage = (result.marks / totalMarks) * 100
+        let grade = ""
 
-    const results = []
+        if (percentage >= 90) grade = "A+"
+        else if (percentage >= 80) grade = "A"
+        else if (percentage >= 70) grade = "B+"
+        else if (percentage >= 60) grade = "B"
+        else if (percentage >= 50) grade = "C+"
+        else if (percentage >= 40) grade = "C"
+        else if (percentage >= 33) grade = "D"
+        else grade = "F"
 
-    // Process each student's exam result
-    for (const item of resultsData) {
-      const { studentId, marksObtained } = item
+        return prisma.examResult.create({
+          data: {
+            examType,
+            marks: result.marks,
+            totalMarks,
+            percentage: Number.parseFloat(percentage.toFixed(2)),
+            grade,
+            class: { connect: { id: classId } },
+            subject: { connect: { id: subjectId } },
+            teacher: { connect: { id: teacherId } },
+            student: { connect: { id: result.studentId } },
+          },
+        })
+      }),
+    )
 
-      if (!studentId || marksObtained === undefined) {
-        continue
-      }
-
-      // Get the student
-      const student = await prisma.student.findUnique({
-        where: { id: studentId },
-        select: {
-          botExamResult: examType === "bot",
-          midExamResult: examType === "mid",
-          endExamResult: examType === "end",
-        },
-      })
-
-      if (!student) {
-        continue
-      }
-
-      let examResults: any[] = []
-
-      if (examType === "bot") {
-        examResults = student.botExamResult || []
-      } else if (examType === "mid") {
-        examResults = student.midExamResult || []
-      } else if (examType === "end") {
-        examResults = student.endExamResult || []
-      }
-
-      // Filter out any existing result for this subject
-      const updatedResults = examResults.filter((r) => r.subName !== subjectId)
-
-      // Add the new result
-      updatedResults.push({
-        subName: subjectId,
-        marksObtained: Number.parseInt(marksObtained),
-      })
-
-      // Update the student's exam results
-      const updateData: any = {}
-
-      if (examType === "bot") {
-        updateData.botExamResult = updatedResults
-      } else if (examType === "mid") {
-        updateData.midExamResult = updatedResults
-      } else if (examType === "end") {
-        updateData.endExamResult = updatedResults
-      }
-
-      const updatedStudent = await prisma.student.update({
-        where: { id: studentId },
-        data: updateData,
-        select: { id: true, name: true, rollNum: true },
-      })
-
-      results.push({
-        ...updatedStudent,
-        marksObtained,
-      })
-    }
-
-    return NextResponse.json({
-      message: "Exam results recorded successfully",
-      examType,
-      subject: subjectId,
-      students: results,
-    })
+    return NextResponse.json(createdResults, { status: 201 })
   } catch (error) {
-    console.error("Record exam results error:", error)
-    return NextResponse.json({ error: "Something went wrong while recording exam results" }, { status: 500 })
+    console.error("Create exam results error:", error)
+    return NextResponse.json({ error: "Something went wrong while creating exam results" }, { status: 500 })
+  }
+}
+
+// Update exam results
+export async function PUT(req: NextRequest) {
+  try {
+    const token = req.headers.get("authorization")?.split(" ")[1]
+
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const decoded = verifyToken(token)
+
+    if (!decoded || (decoded.role !== "Admin" && decoded.role !== "Teacher")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const body = await req.json()
+    const { classId, subjectId, examType, totalMarks, examResults } = body
+
+    if (!classId || !subjectId || !examType || !totalMarks || !examResults) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    // First, delete existing results for this class, subject, and exam type
+    await prisma.examResult.deleteMany({
+      where: {
+        classId,
+        subjectId,
+        examType,
+      },
+    })
+
+    // Then create new results
+    const updatedResults = await Promise.all(
+      examResults.map(async (result: { studentId: string; marks: number }) => {
+        // Calculate grade based on marks percentage
+        const percentage = (result.marks / totalMarks) * 100
+        let grade = ""
+
+        if (percentage >= 90) grade = "A+"
+        else if (percentage >= 80) grade = "A"
+        else if (percentage >= 70) grade = "B+"
+        else if (percentage >= 60) grade = "B"
+        else if (percentage >= 50) grade = "C+"
+        else if (percentage >= 40) grade = "C"
+        else if (percentage >= 33) grade = "D"
+        else grade = "F"
+
+        return prisma.examResult.create({
+          data: {
+            examType,
+            marks: result.marks,
+            totalMarks,
+            percentage: Number.parseFloat(percentage.toFixed(2)),
+            grade,
+            class: { connect: { id: classId } },
+            subject: { connect: { id: subjectId } },
+            teacher: { connect: { id: decoded.id } },
+            student: { connect: { id: result.studentId } },
+          },
+        })
+      }),
+    )
+
+    return NextResponse.json(updatedResults)
+  } catch (error) {
+    console.error("Update exam results error:", error)
+    return NextResponse.json({ error: "Something went wrong while updating exam results" }, { status: 500 })
   }
 }

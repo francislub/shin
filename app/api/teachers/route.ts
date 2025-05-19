@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
     const verificationToken = generateVerificationToken()
 
     // Create teacher data object with required fields
-    const teacherDataPayload = {
+    const teacherData = {
       name,
       email,
       password: hashedPassword,
@@ -104,21 +104,34 @@ export async function POST(req: NextRequest) {
       },
     }
 
-    // Create new teacher - handle subject connection separately to avoid unique constraint issues
+    // Create new teacher without subject connection first
     const newTeacher = await prisma.teacher.create({
-      data: teacherDataPayload,
+      data: teacherData,
+      include: {
+        teachSclass: true,
+      },
     })
 
-    // If a subject ID was provided, update the teacher to connect it
-    if (teachSubjectId) {
-      await prisma.teacher.update({
-        where: { id: newTeacher.id },
-        data: {
-          teachSubject: {
-            connect: { id: teachSubjectId },
+    // If a subject ID was provided and it's not "not_assigned", update the teacher to connect it
+    if (teachSubjectId && teachSubjectId !== "not_assigned") {
+      try {
+        await prisma.teacher.update({
+          where: { id: newTeacher.id },
+          data: {
+            teachSubject: {
+              connect: { id: teachSubjectId },
+            },
           },
-        },
-      })
+        })
+      } catch (error) {
+        // If subject connection fails, delete the teacher to avoid orphaned records
+        await prisma.teacher.delete({
+          where: { id: newTeacher.id },
+        })
+
+        console.error("Error connecting subject to teacher:", error)
+        return NextResponse.json({ error: "This subject is already assigned to another teacher" }, { status: 400 })
+      }
     }
 
     // Fetch the complete teacher data with relations
