@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, TrendingUp, Search, AlertTriangle, CheckCircle2, Download, BarChart4 } from "lucide-react"
-import { Chart } from "@/components/ui/chart"
+import { Chart } from "@/components/ui/chart-component"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 

@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, BarChart4, PieChart, LineChart, Download, RefreshCw } from "lucide-react"
-import { Chart } from "@/components/ui/chart"
+import { Chart } from "@/components/ui/chart-component"
 
 export default function AIAnalytics() {
   const [loading, setLoading] = useState(false)
@@ -28,20 +28,51 @@ export default function AIAnalytics() {
     const fetchData = async () => {
       setLoading(true)
       try {
+        const token = localStorage.getItem("token")
+        if (!token) {
+          toast({
+            title: "Authentication Error",
+            description: "Please log in again to continue.",
+            variant: "destructive",
+          })
+          return
+        }
+
         // Fetch classes
-        const classesResponse = await fetch("/api/classes")
-        const classesData = await classesResponse.json()
-        setClasses(classesData)
+        const classesResponse = await fetch("/api/classes", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (classesResponse.ok) {
+          const classesData = await classesResponse.json()
+          setClasses(classesData)
+        }
 
         // Fetch terms
-        const termsResponse = await fetch("/api/terms")
-        const termsData = await termsResponse.json()
-        setTerms(termsData)
+        const termsResponse = await fetch("/api/terms", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (termsResponse.ok) {
+          const termsData = await termsResponse.json()
+          setTerms(termsData)
+        }
 
         // Fetch subjects
-        const subjectsResponse = await fetch("/api/subjects")
-        const subjectsData = await subjectsResponse.json()
-        setSubjects(subjectsData)
+        const subjectsResponse = await fetch("/api/subjects", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (subjectsResponse.ok) {
+          const subjectsData = await subjectsResponse.json()
+          setSubjects(subjectsData)
+        }
       } catch (error) {
         console.error("Error fetching data:", error)
         toast({
@@ -130,7 +161,7 @@ export default function AIAnalytics() {
       datasets: [
         {
           label: "Average Performance (%)",
-          data: Object.values(subjectPerformance).map((data) => data.total / data.count),
+          data: Object.values(subjectPerformance).map((data: any) => data.total / data.count),
           backgroundColor: [
             "rgba(75, 192, 192, 0.6)",
             "rgba(54, 162, 235, 0.6)",
