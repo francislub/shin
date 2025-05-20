@@ -30,6 +30,17 @@ import {
   TrendingUp,
   Eye,
   MessageCircleMore,
+  PieChart,
+  MessageSquareDashed,
+  BellRing,
+  BrainCircuit,
+  BookText,
+  Target,
+  Sparkles,
+  PenTool,
+  NotebookPen,
+  LineChart,
+  AlertTriangle,
 } from "lucide-react"
 
 interface SidebarProps {
