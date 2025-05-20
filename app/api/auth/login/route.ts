@@ -45,7 +45,8 @@ export async function POST(req: NextRequest) {
         schoolId = user.schoolId
       }
     } else if (normalizedRole === "Student") {
-      user = await prisma.student.findUnique({
+      // Change from findUnique to findFirst since rollNum is not marked as @unique in the schema
+      user = await prisma.student.findFirst({
         where: { rollNum: email },
         select: {
           id: true,
@@ -90,8 +91,18 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if user is verified (if applicable)
-    if (user.verified === false) {
+    // For students, we'll allow login even if not verified
+    if (user.verified === false && normalizedRole !== "Student") {
       return NextResponse.json({ error: "Account not verified. Please check your email." }, { status: 403 })
+    }
+
+    // If it's a student and not verified, we'll auto-verify them
+    if (normalizedRole === "Student" && user.verified === false) {
+      // Update the student record to set verified to true
+      await prisma.student.update({
+        where: { id: user.id },
+        data: { verified: true },
+      })
     }
 
     // Generate JWT token

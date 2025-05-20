@@ -5,7 +5,7 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/context/auth-context"
-import { Header } from "@/components/layout/header"
+// import { Header } from "@/components/layout/header"
 import { Sidebar } from "@/components/layout/sidebar"
 import { useMobile } from "@/hooks/use-mobile"
 
@@ -152,12 +152,11 @@ export function DashboardLayout({ children, title, requiredRole }: DashboardLayo
       )}
 
       {/* Main content */}
-      <div className="flex flex-1 flex-col w-full lg:ml-64">
-        <Header title={title} onMenuClick={toggleSidebar} />
-        <main className="flex-1 p-4 md:p-6 overflow-auto">
-          <div className="mx-auto max-w-7xl">{children}</div>
+      {/* <div className="flex flex-1 flex-col w-full"> */}
+        <main className="flex-1 p-4 w-full overflow-auto">
+          <div className="mx-auto">{children}</div>
         </main>
-      </div>
+      {/* </div> */}
     </div>
   )
 }

@@ -1,66 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
-import { verifyToken, hashPassword } from "@/lib/auth"
+import { hashPassword } from "@/lib/auth"
 
-// Get all teachers for a school
-export async function GET(req: NextRequest) {
-  try {
-    const token = req.headers.get("authorization")?.split(" ")[1]
-
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized: No token provided" }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-
-    if (!decoded) {
-      return NextResponse.json({ error: "Unauthorized: Invalid token" }, { status: 401 })
-    }
-
-    const schoolId = req.nextUrl.searchParams.get("schoolId")
-
-    if (!schoolId) {
-      return NextResponse.json({ error: "Bad Request: School ID is required" }, { status: 400 })
-    }
-
-    // Verify the school exists
-    const schoolExists = await prisma.admin.findUnique({
-      where: { id: schoolId },
-    })
-
-    if (!schoolExists) {
-      return NextResponse.json({ error: "Not Found: School with provided ID does not exist" }, { status: 404 })
-    }
-
-    const teachers = await prisma.teacher.findMany({
-      where: { schoolId },
-      include: {
-        teachSclass: true,
-        teachSubject: true,
-      },
-      orderBy: { name: "asc" },
-    })
-
-    // Remove sensitive data
-    const sanitizedTeachers = teachers.map((teacher) => {
-      const { password, verificationToken, ...teacherData } = teacher as any
-      return teacherData
-    })
-
-    return NextResponse.json(sanitizedTeachers)
-  } catch (error) {
-    console.error("Get teachers error:", error)
-    return NextResponse.json(
-      {
-        error: "Internal Server Error: Failed to fetch teachers",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    )
-  }
-}
-
-// Create a new teacher
 export async function POST(req: NextRequest) {
   try {
     // Parse request body

@@ -6,9 +6,10 @@ datasource db {
   provider = "mongodb"
   url      = env("DATABASE_URL")
 }
+
 model AdminRegistrationToken {
   id        String    @id @default(auto()) @map("_id") @db.ObjectId
-  email     String    @unique
+  email     String    // removed @unique temporarily
   token     String
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -36,74 +37,89 @@ model Admin {
   classTeacherComments    ClassTeacherComment[]
   complains               Complain[]
   payments                Payment[]
+  exams                   Exam[]
+  attendanceRecords       AttendanceRecord[]
+  settings                Setting[]
+  messages                Message[]
+  reportCards             ReportCard[]
 
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
 }
 
 model Term {
-  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
   termName       String
   nextTermStarts String
   nextTermEnds   String
-  status         String    @default("Active")
+  status         String       @default("Active")
   year           String
 
-  school         Admin     @relation(fields: [schoolId], references: [id])
-  schoolId       String    @db.ObjectId
+  school         Admin        @relation(fields: [schoolId], references: [id])
+  schoolId       String       @db.ObjectId
   sclasses       Sclass[]
+  exams          Exam[]
+  reportCards    ReportCard[]
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
 
 model Sclass {
-  id         String    @id @default(auto()) @map("_id") @db.ObjectId
-  sclassName String
+  id                String            @id @default(auto()) @map("_id") @db.ObjectId
+  sclassName        String
 
-  school     Admin     @relation(fields: [schoolId], references: [id])
-  schoolId   String    @db.ObjectId
+  school            Admin             @relation(fields: [schoolId], references: [id])
+  schoolId          String            @db.ObjectId
 
-  term       Term?     @relation(fields: [termId], references: [id])
-  termId     String?   @db.ObjectId
+  term              Term?             @relation(fields: [termId], references: [id])
+  termId            String?           @db.ObjectId
 
-  students   Student[]
-  subjects   Subject[]
-  teachers   Teacher[]
+  students          Student[]
+  subjects          Subject[]
+  teachers          Teacher[]
+  exams             Exam[]
+  attendanceRecords AttendanceRecord[]
+  reportCards       ReportCard[]
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 }
 
 model Student {
-  id                String          @id @default(auto()) @map("_id") @db.ObjectId
+  id                String            @id @default(auto()) @map("_id") @db.ObjectId
   name              String
   rollNum           String
   password          String
-  role              String          @default("Student")
+  role              String            @default("Student")
   gender            String?
   photo             String?
   discipline        String?
   timeManagement    String?
   smartness         String?
   attendanceRemarks String?
-  verified          Boolean         @default(false)
+  verified          Boolean           @default(false)
   verificationToken String?
 
-  sclass            Sclass          @relation(fields: [sclassId], references: [id])
-  sclassId          String          @db.ObjectId
+  sclass            Sclass            @relation(fields: [sclassId], references: [id])
+  sclassId          String            @db.ObjectId
 
-  school            Admin           @relation(fields: [schoolId], references: [id])
-  schoolId          String          @db.ObjectId
+  school            Admin             @relation(fields: [schoolId], references: [id])
+  schoolId          String            @db.ObjectId
 
-  parent            Parent?         @relation(fields: [parentId], references: [id])
-  parentId          String?         @db.ObjectId
+  parent            Parent?           @relation(fields: [parentId], references: [id])
+  parentId          String?           @db.ObjectId
 
   complains         Complain[]
   payments          Payment[]
+  examResults       ExamResult[]
+  attendanceRecords AttendanceRecord[]
+  reportCards       ReportCard[]
+  receivedMessages  Message[]         @relation("MessageRecipient")
+  sentMessages      Message[]         @relation("MessageSender")
 
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 }
 
 model Parent {
@@ -122,6 +138,8 @@ model Parent {
 
   students             Student[]
   payments             Payment[]
+  receivedMessages     Message[]  @relation("MessageRecipient")
+  sentMessages         Message[]  @relation("MessageSender")
 
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
@@ -146,28 +164,35 @@ model Teacher {
   teachSubject         Subject?               @relation("SubjectTeacher", fields: [teachSubjectId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   classTeacherComments ClassTeacherComment[]
+  exams                Exam[]
+  examResults          ExamResult[]
+  attendanceRecords    AttendanceRecord[]
+  reportCards          ReportCard[]
+  receivedMessages     Message[]              @relation("MessageRecipient")
+  sentMessages         Message[]              @relation("MessageSender")
 
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
 }
 
-
 model Subject {
-  id         String    @id @default(auto()) @map("_id") @db.ObjectId
-  subName    String
-  subCode    String
-  sessions   String
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  subName     String
+  subCode     String
+  sessions    String
 
-  sclassName Sclass    @relation(fields: [sclassId], references: [id])
-  sclassId   String    @db.ObjectId
+  sclassName  Sclass       @relation(fields: [sclassId], references: [id])
+  sclassId    String       @db.ObjectId
 
-  school     Admin     @relation(fields: [schoolId], references: [id])
-  schoolId   String    @db.ObjectId
+  school      Admin        @relation(fields: [schoolId], references: [id])
+  schoolId    String       @db.ObjectId
 
-  teacher    Teacher?  @relation("SubjectTeacher")
+  teacher     Teacher?     @relation("SubjectTeacher")
+  exams       Exam[]
+  examResults ExamResult[]
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 }
 
 model Notice {
@@ -261,6 +286,158 @@ model Payment {
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+}
+
+// New models based on sidebar navigation
+
+model Exam {
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  examName    String
+  examType    String       // BOT, MID, END, etc.
+  startDate   DateTime
+  endDate     DateTime
+  totalMarks  Int
+  passingMarks Int
+  
+  subject     Subject      @relation(fields: [subjectId], references: [id])
+  subjectId   String       @db.ObjectId
+  
+  sclass      Sclass       @relation(fields: [sclassId], references: [id])
+  sclassId    String       @db.ObjectId
+  
+  term        Term         @relation(fields: [termId], references: [id])
+  termId      String       @db.ObjectId
+  
+  school      Admin        @relation(fields: [schoolId], references: [id])
+  schoolId    String       @db.ObjectId
+  
+  teacher     Teacher      @relation(fields: [teacherId], references: [id])
+  teacherId   String       @db.ObjectId
+  
+  results     ExamResult[]
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model ExamResult {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  marksObtained Int
+  remarks       String?
+  grade         String?
+  
+  exam          Exam      @relation(fields: [examId], references: [id])
+  examId        String    @db.ObjectId
+  
+  student       Student   @relation(fields: [studentId], references: [id])
+  studentId     String    @db.ObjectId
+  
+  subject       Subject   @relation(fields: [subjectId], references: [id])
+  subjectId     String    @db.ObjectId
+  
+  teacher       Teacher   @relation(fields: [teacherId], references: [id])
+  teacherId     String    @db.ObjectId
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model AttendanceRecord {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  date      DateTime
+  status    String    // Present, Absent, Late, etc.
+  remarks   String?
+  
+  student   Student   @relation(fields: [studentId], references: [id])
+  studentId String    @db.ObjectId
+  
+  sclass    Sclass    @relation(fields: [sclassId], references: [id])
+  sclassId  String    @db.ObjectId
+  
+  teacher   Teacher   @relation(fields: [teacherId], references: [id])
+  teacherId String    @db.ObjectId
+  
+  school    Admin     @relation(fields: [schoolId], references: [id])
+  schoolId  String    @db.ObjectId
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model ReportCard {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  termAverage     Float
+  classRank       Int?
+  attendance      Float     // Percentage
+  conductGrade    String?
+  teacherRemarks  String?
+  principalRemarks String?
+  
+  student         Student   @relation(fields: [studentId], references: [id])
+  studentId       String    @db.ObjectId
+  
+  sclass          Sclass    @relation(fields: [sclassId], references: [id])
+  sclassId        String    @db.ObjectId
+  
+  term            Term      @relation(fields: [termId], references: [id])
+  termId          String    @db.ObjectId
+  
+  teacher         Teacher   @relation(fields: [teacherId], references: [id])
+  teacherId       String    @db.ObjectId
+  
+  school          Admin     @relation(fields: [schoolId], references: [id])
+  schoolId        String    @db.ObjectId
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Message {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  subject     String
+  content     String
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  
+  // Polymorphic relationship for sender (can be Admin, Teacher, Student, or Parent)
+  senderType  String    // "Admin", "Teacher", "Student", "Parent"
+  senderId    String    @db.ObjectId
+  
+  // Polymorphic relationship for recipient (can be Admin, Teacher, Student, or Parent)
+  recipientType String  // "Admin", "Teacher", "Student", "Parent"
+  recipientId   String  @db.ObjectId
+  
+  // Direct relations for each user type
+  studentSender    Student? @relation("MessageSender", fields: [senderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  studentRecipient Student? @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  parentSender     Parent?  @relation("MessageSender", fields: [senderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parentRecipient  Parent?  @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  teacherSender    Teacher? @relation("MessageSender", fields: [senderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  teacherRecipient Teacher? @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  school      Admin     @relation(fields: [schoolId], references: [id])
+  schoolId    String    @db.ObjectId
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Setting {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  key         String
+  value       String
+  category    String    // "General", "Notification", "Security", etc.
+  description String?
+  
+  school      Admin     @relation(fields: [schoolId], references: [id])
+  schoolId    String    @db.ObjectId
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@unique([schoolId, key])
 }
 
 type BotExamResult {

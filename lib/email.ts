@@ -1,29 +1,10 @@
-import nodemailer from "nodemailer"
-
-type EmailOptions = {
-  to: string
-  subject: string
-  html: string
-}
-
-export async function sendEmail({ to, subject, html }: EmailOptions): Promise<void> {
-  const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_SERVER_HOST,
-    port: Number(process.env.EMAIL_SERVER_PORT),
-    auth: {
-      user: process.env.EMAIL_SERVER_USER,
-      pass: process.env.EMAIL_SERVER_PASSWORD,
-    },
-    secure: true,
-  })
-
-  await transporter.sendMail({
-    from: process.env.EMAIL_FROM,
-    to,
-    subject,
-    html,
-  })
-}
+/**
+ * This file is a placeholder to maintain backward compatibility.
+ * It re-exports the email templates from email-server.ts but not the sendEmail function.
+ *
+ * IMPORTANT: Do not import this file in client components.
+ * Use the server actions from app/actions/email-actions.ts instead.
+ */
 
 export function getVerificationEmailHtml(name: string, verificationUrl: string): string {
   return `
