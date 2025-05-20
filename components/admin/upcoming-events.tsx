@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Calendar, Clock } from 'lucide-react'
+import { Calendar, Clock } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
 interface Event {
@@ -49,75 +49,76 @@ const MOCK_EVENTS: Event[] = [
     type: "training",
     description: "Professional development workshop for all teaching staff",
   },
-];
+]
 
 export function AdminUpcomingEvents() {
   const [events, setEvents] = useState<Event[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    let isMounted = true;
-    
+    let isMounted = true
+
     const fetchEvents = async () => {
       try {
         const token = localStorage.getItem("token")
 
         if (!token) {
           if (isMounted) {
-            setEvents(MOCK_EVENTS);
-            setIsLoading(false);
+            setIsLoading(false)
+            // Don't show toast here as it might be distracting
+            // Just show empty state
           }
-          return;
+          return
         }
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-        
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout
+
         try {
           const response = await fetch("/api/admin/upcoming-events", {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeoutId);
-          
+            signal: controller.signal,
+          })
+
+          clearTimeout(timeoutId)
+
           if (response.ok) {
-            const data = await response.json();
+            const data = await response.json()
             if (isMounted) {
-              setEvents(data);
+              setEvents(data)
             }
           } else {
-            console.error("Error fetching events:", response.status);
+            console.error("Error fetching events:", response.status)
             if (isMounted) {
-              setEvents(MOCK_EVENTS);
+              // Don't show toast for this component, just show empty state
             }
           }
         } catch (fetchError) {
-          console.error("Events fetch error:", fetchError);
+          console.error("Events fetch error:", fetchError)
           if (isMounted) {
-            setEvents(MOCK_EVENTS);
+            // Don't show toast for this component, just show empty state
           }
         }
       } catch (error) {
-        console.error("Error in events:", error);
+        console.error("Error in events:", error)
         if (isMounted) {
-          setEvents(MOCK_EVENTS);
+          // Don't show toast for this component, just show empty state
         }
       } finally {
         if (isMounted) {
-          setIsLoading(false);
+          setIsLoading(false)
         }
       }
-    };
+    }
 
-    fetchEvents();
-    
+    fetchEvents()
+
     return () => {
-      isMounted = false;
-    };
-  }, []);
+      isMounted = false
+    }
+  }, [])
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)

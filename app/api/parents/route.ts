@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
-import { verifyToken, hashPassword, generateVerificationToken } from "@/lib/auth"
-import { sendEmail, getVerificationEmailHtml } from "@/lib/email"
+import { verifyToken, hashPassword } from "@/lib/auth"
 
 // Get all parents for a school
 export async function GET(req: NextRequest) {
@@ -79,10 +78,7 @@ export async function POST(req: NextRequest) {
     // Hash password
     const hashedPassword = await hashPassword(password)
 
-    // Generate verification token
-    const verificationToken = generateVerificationToken()
-
-    // Create new parent
+    // Create new parent with verified set to true
     const newParent = await prisma.parent.create({
       data: {
         name,
@@ -90,7 +86,7 @@ export async function POST(req: NextRequest) {
         password: hashedPassword,
         phone,
         address,
-        verificationToken,
+        verified: true, // Set verified to true by default
         school: {
           connect: { id: schoolId },
         },
@@ -107,22 +103,13 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    // Send verification email
-    const verificationUrl = `${process.env.NEXTAUTH_URL}/verify-email?token=${verificationToken}`
-
-    await sendEmail({
-      to: email,
-      subject: "Verify your email address",
-      html: getVerificationEmailHtml(name, verificationUrl),
-    })
-
     // Return success response without sensitive data
     const { password: _, verificationToken: __, ...parentData } = newParent as any
 
     return NextResponse.json(
       {
         ...parentData,
-        message: "Parent created successfully. Verification email sent.",
+        message: "Parent created successfully.",
       },
       { status: 201 },
     )

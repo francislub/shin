@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { User, BookOpen, Bell, Calendar, Clock } from 'lucide-react'
+import { User, BookOpen, Bell, Calendar, Clock } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 interface Activity {
@@ -55,75 +55,76 @@ const MOCK_ACTIVITIES: Activity[] = [
     timestamp: new Date(Date.now() - 1000 * 60 * 300).toISOString(),
     details: "Generated monthly attendance reports for all classes",
   },
-];
+]
 
 export function AdminRecentActivity() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    let isMounted = true;
-    
+    let isMounted = true
+
     const fetchActivities = async () => {
       try {
         const token = localStorage.getItem("token")
 
         if (!token) {
           if (isMounted) {
-            setActivities(MOCK_ACTIVITIES);
-            setIsLoading(false);
+            setIsLoading(false)
+            // Don't show toast here as it might be distracting
+            // Just show empty state
           }
-          return;
+          return
         }
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-        
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout
+
         try {
           const response = await fetch("/api/admin/recent-activities", {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeoutId);
-          
+            signal: controller.signal,
+          })
+
+          clearTimeout(timeoutId)
+
           if (response.ok) {
-            const data = await response.json();
+            const data = await response.json()
             if (isMounted) {
-              setActivities(data);
+              setActivities(data)
             }
           } else {
-            console.error("Error fetching activities:", response.status);
+            console.error("Error fetching activities:", response.status)
             if (isMounted) {
-              setActivities(MOCK_ACTIVITIES);
+              // Don't show toast for this component, just show empty state
             }
           }
         } catch (fetchError) {
-          console.error("Activities fetch error:", fetchError);
+          console.error("Activities fetch error:", fetchError)
           if (isMounted) {
-            setActivities(MOCK_ACTIVITIES);
+            // Don't show toast for this component, just show empty state
           }
         }
       } catch (error) {
-        console.error("Error in activities:", error);
+        console.error("Error in activities:", error)
         if (isMounted) {
-          setActivities(MOCK_ACTIVITIES);
+          // Don't show toast for this component, just show empty state
         }
       } finally {
         if (isMounted) {
-          setIsLoading(false);
+          setIsLoading(false)
         }
       }
-    };
+    }
 
-    fetchActivities();
-    
+    fetchActivities()
+
     return () => {
-      isMounted = false;
-    };
-  }, []);
+      isMounted = false
+    }
+  }, [])
 
   const getTimeAgo = (timestamp: string) => {
     const now = new Date()

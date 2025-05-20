@@ -92,6 +92,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (phone) updateData.phone = phone
     if (address) updateData.address = address
 
+    // Always ensure verified is true
+    updateData.verified = true
+
     // Update parent
     const updatedParent = await prisma.parent.update({
       where: { id: parentId },

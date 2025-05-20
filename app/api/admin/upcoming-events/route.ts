@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
+import prisma from "@/lib/prisma"
 
 export async function GET(request: Request) {
   try {
@@ -16,53 +17,102 @@ export async function GET(request: Request) {
     // Verify the token
     const decoded = verifyToken(token)
 
-    if (!decoded) {
+    if (!decoded || decoded.role !== "Admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Current date
+    // Get current date
     const now = new Date()
 
-    // Mock data for upcoming events
-    const events = [
-      {
-        id: "1",
-        title: "Parent-Teacher Meeting",
-        date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5).toISOString(),
-        type: "meeting",
-        description: "Quarterly parent-teacher meeting for all classes",
-      },
-      {
-        id: "2",
-        title: "Annual Sports Day",
-        date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 12).toISOString(),
-        type: "event",
-        description: "Annual sports competition for all students",
-      },
-      {
-        id: "3",
-        title: "Science Exhibition",
-        date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 15).toISOString(),
-        type: "academic",
-        description: "Science projects exhibition for classes 8-12",
-      },
-      {
-        id: "4",
-        title: "Term End Exams",
-        date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 20).toISOString(),
-        type: "exam",
-        description: "End of term examinations begin for all classes",
-      },
-      {
-        id: "5",
-        title: "Teacher Training Workshop",
-        date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 25).toISOString(),
-        type: "training",
-        description: "Professional development workshop for all teaching staff",
-      },
-    ]
+    // Get date 30 days from now
+    const thirtyDaysFromNow = new Date(now)
+    thirtyDaysFromNow.setDate(now.getDate() + 30)
 
-    return NextResponse.json(events)
+    // Get upcoming events from various tables
+    const upcomingEvents = []
+
+    // Get upcoming exams
+    const exams = await prisma.exam.findMany({
+      where: {
+        startDate: {
+          gte: now,
+          lte: thirtyDaysFromNow,
+        },
+      },
+      include: {
+        subject: true,
+        sclass: true,
+      },
+      orderBy: {
+        startDate: "asc",
+      },
+    })
+
+    exams.forEach((exam) => {
+      upcomingEvents.push({
+        id: `exam-${exam.id}`,
+        title: `${exam.examName} - ${exam.subject.subName}`,
+        date: exam.startDate.toISOString(),
+        type: "exam",
+        description: `${exam.examName} for ${exam.subject.subName} in ${exam.sclass.sclassName}`,
+      })
+    })
+
+    // Get upcoming notices (using date field as event date)
+    const notices = await prisma.notice.findMany({
+      where: {
+        date: {
+          gte: now,
+          lte: thirtyDaysFromNow,
+        },
+      },
+      orderBy: {
+        date: "asc",
+      },
+    })
+
+    notices.forEach((notice) => {
+      upcomingEvents.push({
+        id: `notice-${notice.id}`,
+        title: notice.title,
+        date: notice.date.toISOString(),
+        type: "event",
+        description: notice.details.substring(0, 100) + (notice.details.length > 100 ? "..." : ""),
+      })
+    })
+
+    // Get upcoming payments
+    const payments = await prisma.payment.findMany({
+      where: {
+        dueDate: {
+          gte: now,
+          lte: thirtyDaysFromNow,
+        },
+        status: "Pending",
+      },
+      include: {
+        student: true,
+      },
+      orderBy: {
+        dueDate: "asc",
+      },
+      take: 10,
+    })
+
+    payments.forEach((payment) => {
+      upcomingEvents.push({
+        id: `payment-${payment.id}`,
+        title: `Payment Due - ${payment.student.name}`,
+        date: payment.dueDate.toISOString(),
+        type: "payment",
+        description: `Payment of ${payment.amount} due for ${payment.description}`,
+      })
+    })
+
+    // Sort all events by date (earliest first)
+    upcomingEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    return NextResponse.json(upcomingEvents)
   } catch (error) {
     console.error("Error fetching upcoming events:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

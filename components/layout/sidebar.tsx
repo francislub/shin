@@ -26,6 +26,10 @@ import {
   MessageCircle,
   Award,
   AlertCircle,
+  BarChart4,
+  TrendingUp,
+  Eye,
+  MessageCircleMore,
 } from "lucide-react"
 
 interface SidebarProps {
@@ -65,6 +69,11 @@ export function Sidebar({ className, onClose }: SidebarProps) {
           { href: "/admin/profile", label: "Profile", icon: User },
           { href: "/admin/settings", label: "Settings", icon: Settings },
           { href: "/admin/complaints", label: "Complaints", icon: AlertCircle },
+          { href: "/admin/ai-analytics", label: "AI Analytics", icon: BarChart4 }, // Dashboard with AI insights on performance trends
+          { href: "/admin/ai-performance-prediction", label: "Performance Prediction", icon: TrendingUp }, // Predict student performance
+          { href: "/admin/ai-attendance-insights", label: "Attendance Insights", icon: Eye }, // Flag students with risky attendance
+          { href: "/admin/ai-message-suggestions", label: "Suggested Messages", icon: MessageCircleMore }, // Auto-generate notice/message templates
+
         ]
       case "Teacher":
         return [
@@ -79,6 +88,11 @@ export function Sidebar({ className, onClose }: SidebarProps) {
           { href: "/teacher/notices", label: "Notices", icon: Bell },
           { href: "/teacher/messages", label: "Messages", icon: MessageSquare },
           { href: "/teacher/profile", label: "Profile", icon: User },
+          { href: "/teacher/ai-marking-assist", label: "Marking Assistant", icon: PenTool }, // Auto-grade structured answers
+          { href: "/teacher/ai-lesson-plans", label: "AI Lesson Plans", icon: NotebookPen }, // Generate smart lesson suggestions
+          { href: "/teacher/ai-progress-tracker", label: "Progress Tracker", icon: LineChart }, // Predict learning gaps
+          { href: "/teacher/ai-behavior-analysis", label: "Behavior Alerts", icon: AlertTriangle }, // Analyze patterns in attendance/comments
+
         ]
       case "Student":
         return [
@@ -90,6 +104,11 @@ export function Sidebar({ className, onClose }: SidebarProps) {
           { href: "/student/notices", label: "Notices", icon: Bell },
           { href: "/student/complaints", label: "Complaints", icon: AlertCircle },
           { href: "/student/profile", label: "Profile", icon: User },
+          { href: "/student/ai-study-tips", label: "Study Tips", icon: BrainCircuit }, // Personalized study advice
+          { href: "/student/ai-revision-helper", label: "Revision Helper", icon: BookText }, // AI quiz or revision generator
+          { href: "/student/ai-goals", label: "Smart Goals", icon: Target }, // Set & track study goals using AI
+          { href: "/student/ai-motivation", label: "Motivation Boost", icon: Sparkles }, // Daily quote or feedback generator
+
         ]
       case "Parent":
         return [
@@ -101,6 +120,10 @@ export function Sidebar({ className, onClose }: SidebarProps) {
           { href: "/parent/payments", label: "Payments", icon: CreditCard },
           { href: "/parent/messages", label: "Messages", icon: MessageSquare },
           { href: "/parent/profile", label: "Profile", icon: User },
+          { href: "/parent/ai-progress-summary", label: "Child Progress", icon: PieChart }, // AI-generated summary of child’s performance
+          { href: "/parent/ai-communication-suggestions", label: "Talk to Teacher", icon: MessageSquareDashed }, // AI-generated concern templates
+          { href: "/parent/ai-attendance-alerts", label: "Attendance Alerts", icon: BellRing }, // Predict if child is at risk
+
         ]
       default:
         return [{ href: "/login", label: "Login", icon: LogOut }]

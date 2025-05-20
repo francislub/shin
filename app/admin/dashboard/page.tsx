@@ -39,9 +39,15 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchDashboardStats = async () => {
       try {
+        setIsLoading(true)
         const token = localStorage.getItem("token")
 
         if (!token) {
+          toast({
+            title: "Authentication error",
+            description: "Please log in again to continue",
+            variant: "destructive",
+          })
           return
         }
 
@@ -55,30 +61,19 @@ export default function AdminDashboard() {
           const data = await response.json()
           setStats(data)
         } else {
-          // For demo purposes, set mock data if API fails
-          setStats({
-            teacherCount: 42,
-            studentCount: 568,
-            classCount: 24,
-            subjectCount: 18,
-            termCount: 3,
-            noticeCount: 12,
-            studentGrowth: 5.2,
-            teacherGrowth: 2.8,
+          const errorData = await response.json()
+          toast({
+            title: "Failed to load dashboard data",
+            description: errorData.error || "Please try again later",
+            variant: "destructive",
           })
         }
       } catch (error) {
         console.error("Dashboard stats error:", error)
-        // For demo purposes, set mock data if API fails
-        setStats({
-          teacherCount: 42,
-          studentCount: 568,
-          classCount: 24,
-          subjectCount: 18,
-          termCount: 3,
-          noticeCount: 12,
-          studentGrowth: 5.2,
-          teacherGrowth: 2.8,
+        toast({
+          title: "Error loading dashboard",
+          description: "Could not connect to the server. Please try again later.",
+          variant: "destructive",
         })
       } finally {
         setIsLoading(false)
