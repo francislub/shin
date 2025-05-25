@@ -1,17 +1,24 @@
-import { NextRequest, NextResponse } from "next/server"
-import { getSession } from "@/lib/auth"
+import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
+import { verifyToken } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session || session.role !== "Teacher") {
+    const token = request.headers.get("authorization")?.split(" ")[1]
+
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const decoded = verifyToken(token)
+
+    if (!decoded || decoded.role !== "Teacher") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     // Get teacher details with related data
     const teacher = await prisma.teacher.findUnique({
-      where: { id: session.id },
+      where: { id: decoded.id },
       include: {
         teachSclass: {
           include: {
@@ -22,20 +29,19 @@ export async function GET(request: NextRequest) {
                 rollNum: true,
               },
             },
+            subjects: {
+              include: {
+                teacher: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
           },
         },
         teachSubject: true,
-        exams: {
-          include: {
-            subject: true,
-            sclass: true,
-            results: true,
-          },
-          orderBy: {
-            startDate: "desc",
-          },
-          take: 5,
-        },
       },
     })
 
@@ -43,10 +49,53 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
     }
 
-    // Get recent attendance records
+    // Get all exams for subjects in teacher's class or their specific subject
+    const examWhereClause: any = {
+      OR: [
+        { sclassId: teacher.teachSclassId }, // All exams in teacher's class
+      ],
+    }
+
+    if (teacher.teachSubject) {
+      examWhereClause.OR.push({ subjectId: teacher.teachSubject.id }) // Exams for teacher's specific subject
+    }
+
+    const recentExams = await prisma.exam.findMany({
+      where: examWhereClause,
+      include: {
+        subject: {
+          select: {
+            id: true,
+            subName: true,
+          },
+        },
+        sclass: {
+          select: {
+            id: true,
+            sclassName: true,
+          },
+        },
+        results: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        startDate: "desc",
+      },
+      take: 5,
+    })
+
+    // Get recent attendance records for teacher's class
     const recentAttendance = await prisma.attendanceRecord.findMany({
       where: {
-        teacherId: session.id,
+        sclassId: teacher.teachSclassId,
       },
       include: {
         student: {
@@ -72,10 +121,10 @@ export async function GET(request: NextRequest) {
     // Get attendance statistics for teacher's class
     const today = new Date()
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-    
+
     const monthlyAttendance = await prisma.attendanceRecord.findMany({
       where: {
-        teacherId: session.id,
+        sclassId: teacher.teachSclassId,
         date: {
           gte: startOfMonth,
           lte: today,
@@ -85,21 +134,21 @@ export async function GET(request: NextRequest) {
 
     const attendanceStats = {
       totalRecords: monthlyAttendance.length,
-      presentCount: monthlyAttendance.filter(record => record.status === "Present").length,
-      absentCount: monthlyAttendance.filter(record => record.status === "Absent").length,
-      lateCount: monthlyAttendance.filter(record => record.status === "Late").length,
+      presentCount: monthlyAttendance.filter((record) => record.status === "Present").length,
+      absentCount: monthlyAttendance.filter((record) => record.status === "Absent").length,
+      lateCount: monthlyAttendance.filter((record) => record.status === "Late").length,
     }
 
     // Get exam statistics
     const examStats = {
-      totalExams: teacher.exams.length,
-      upcomingExams: teacher.exams.filter(exam => new Date(exam.startDate) > today).length,
-      completedExams: teacher.exams.filter(exam => new Date(exam.endDate) < today).length,
+      totalExams: recentExams.length,
+      upcomingExams: recentExams.filter((exam) => new Date(exam.startDate) > today).length,
+      completedExams: recentExams.filter((exam) => new Date(exam.endDate) < today).length,
     }
 
     // Get class performance summary
     const classPerformance = await Promise.all(
-      teacher.exams.map(async (exam) => {
+      recentExams.map(async (exam) => {
         const results = await prisma.examResult.findMany({
           where: {
             examId: exam.id,
@@ -107,10 +156,9 @@ export async function GET(request: NextRequest) {
         })
 
         const totalStudents = results.length
-        const passedStudents = results.filter(result => result.marksObtained >= exam.passingMarks).length
-        const averageMarks = totalStudents > 0 
-          ? results.reduce((sum, result) => sum + result.marksObtained, 0) / totalStudents 
-          : 0
+        const passedStudents = results.filter((result) => result.marksObtained >= exam.passingMarks).length
+        const averageMarks =
+          totalStudents > 0 ? results.reduce((sum, result) => sum + result.marksObtained, 0) / totalStudents : 0
 
         return {
           examId: exam.id,
@@ -121,7 +169,7 @@ export async function GET(request: NextRequest) {
           passPercentage: totalStudents > 0 ? (passedStudents / totalStudents) * 100 : 0,
           averageMarks,
         }
-      })
+      }),
     )
 
     const dashboardData = {
@@ -131,13 +179,15 @@ export async function GET(request: NextRequest) {
         email: teacher.email,
         class: teacher.teachSclass,
         subject: teacher.teachSubject,
+        allSubjects: teacher.teachSclass.subjects, // All subjects in the class
       },
       stats: {
         totalStudents: teacher.teachSclass.students.length,
+        totalSubjects: teacher.teachSclass.subjects.length,
         attendanceStats,
         examStats,
       },
-      recentExams: teacher.exams,
+      recentExams,
       recentAttendance,
       classPerformance,
     }

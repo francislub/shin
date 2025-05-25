@@ -3,8 +3,9 @@ import prisma from "@/lib/prisma"
 import { verifyToken } from "@/lib/auth"
 
 // Get classes for a specific teacher
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params
     const token = req.headers.get("authorization")?.split(" ")[1]
 
     if (!token) {
@@ -17,83 +18,56 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    // Get classes where the teacher is assigned as a subject teacher
-    const teacherSubjects = await prisma.subject.findMany({
-      where: {
-        teacherId: params.id,
-      },
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        class: {
-          select: {
-            id: true,
-            name: true,
-            section: true,
-            academicYear: true,
+    // Get teacher details
+    const teacher = await prisma.teacher.findUnique({
+      where: { id },
+      include: {
+        teachSclass: {
+          include: {
+            students: {
+              select: {
+                id: true,
+                name: true,
+                rollNum: true,
+              },
+            },
+            subjects: {
+              include: {
+                teacher: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
           },
         },
+        teachSubject: true,
       },
     })
 
-    // Get classes where the teacher is assigned as a class teacher
-    const classTeacherClasses = await prisma.class.findMany({
-      where: {
-        classTeacherId: params.id,
-      },
-      select: {
-        id: true,
-        name: true,
-        section: true,
-        academicYear: true,
-      },
-    })
-
-    // Combine and deduplicate classes
-    const classesMap = new Map()
-
-    // Add classes from subjects
-    teacherSubjects.forEach((subject) => {
-      if (subject.class && !classesMap.has(subject.class.id)) {
-        classesMap.set(subject.class.id, {
-          ...subject.class,
-          isClassTeacher: false,
-          subjects: [{ id: subject.id, name: subject.name, code: subject.code }],
-        })
-      } else if (subject.class) {
-        const existingClass = classesMap.get(subject.class.id)
-        existingClass.subjects.push({ id: subject.id, name: subject.name, code: subject.code })
-      }
-    })
-
-    // Add or update classes where teacher is class teacher
-    classTeacherClasses.forEach((cls) => {
-      if (!classesMap.has(cls.id)) {
-        classesMap.set(cls.id, {
-          ...cls,
-          isClassTeacher: true,
-          subjects: [],
-        })
-      } else {
-        const existingClass = classesMap.get(cls.id)
-        existingClass.isClassTeacher = true
-      }
-    })
-
-    // Get student counts for each class
-    const classes = Array.from(classesMap.values())
-
-    for (const cls of classes) {
-      const studentCount = await prisma.student.count({
-        where: {
-          classId: cls.id,
-        },
-      })
-      cls.studentCount = studentCount
+    if (!teacher) {
+      return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
     }
 
-    return NextResponse.json(classes)
+    // Format the class data
+    const classData = {
+      id: teacher.teachSclass.id,
+      sclassName: teacher.teachSclass.sclassName,
+      isClassTeacher: true, // This teacher is the class teacher
+      studentCount: teacher.teachSclass.students.length,
+      subjects: teacher.teachSclass.subjects.map((subject) => ({
+        id: subject.id,
+        subName: subject.subName,
+        subCode: subject.subCode,
+        isTeaching: subject.teacher?.id === teacher.id,
+        teacherName: subject.teacher?.name || "Unassigned",
+      })),
+      students: teacher.teachSclass.students,
+    }
+
+    return NextResponse.json([classData]) // Return as array for consistency
   } catch (error) {
     console.error("Get teacher classes error:", error)
     return NextResponse.json({ error: "Something went wrong while fetching teacher classes" }, { status: 500 })

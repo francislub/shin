@@ -1,35 +1,31 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
-import { verifyJWT } from "@/lib/auth"
+import { verifyToken } from "@/lib/auth"
 
-export async function GET(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    // Get token from header
-    const token = req.headers.get("authorization")?.split(" ")[1]
+    const token = request.headers.get("authorization")?.split(" ")[1]
 
     if (!token) {
-      return NextResponse.json({ error: "Unauthorized: No token provided" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify token
-    const decoded = await verifyJWT(token)
+    const decoded = verifyToken(token)
 
     if (!decoded || decoded.role !== "Teacher") {
-      return NextResponse.json({ error: "Unauthorized: Invalid token or not a teacher" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const teacherId = decoded.id
-
-    // Get teacher's class and subject
+    // Get basic teacher stats
     const teacher = await prisma.teacher.findUnique({
-      where: { id: teacherId },
+      where: { id: decoded.id },
       include: {
         teachSclass: {
           include: {
             students: true,
           },
         },
-        teachSubject: true,
+        exams: true,
       },
     })
 
@@ -37,48 +33,31 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
     }
 
-    // Calculate student count
-    const studentCount = teacher.teachSclass?.students.length || 0
+    // Get attendance stats for current month
+    const today = new Date()
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
 
-    // Get subject name
-    const subjectName = teacher.teachSubject?.subName || ""
-
-    // Get recent notices
-    const noticeCount = await prisma.notice.count({
+    const attendanceRecords = await prisma.attendanceRecord.findMany({
       where: {
-        createdAt: {
-          gte: new Date(new Date().setDate(new Date().getDate() - 30)), // Last 30 days
-        },
-      },
-    })
-
-    // Get unread messages
-    const unreadMessageCount = await prisma.message.count({
-      where: {
-        recipientId: teacherId,
-        read: false,
-      },
-    })
-
-    // Get upcoming exams
-    const upcomingExamCount = await prisma.exam.count({
-      where: {
-        teacherId: teacherId,
+        teacherId: decoded.id,
         date: {
-          gte: new Date(),
+          gte: startOfMonth,
+          lte: today,
         },
       },
     })
 
-    return NextResponse.json({
-      studentCount,
-      subjectName,
-      noticeCount,
-      unreadMessageCount,
-      upcomingExamCount,
-    })
+    const stats = {
+      totalStudents: teacher.teachSclass.students.length,
+      totalExams: teacher.exams.length,
+      attendanceRecords: attendanceRecords.length,
+      presentCount: attendanceRecords.filter((record) => record.status === "Present").length,
+      absentCount: attendanceRecords.filter((record) => record.status === "Absent").length,
+    }
+
+    return NextResponse.json(stats)
   } catch (error) {
-    console.error("Dashboard stats error:", error)
+    console.error("Error fetching teacher stats:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

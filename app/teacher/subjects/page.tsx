@@ -27,6 +27,7 @@ interface Subject {
     rollNum: string
     email?: string
   }>
+  isTeaching?: boolean
 }
 
 export default function TeacherSubjects() {
@@ -55,6 +56,7 @@ export default function TeacherSubjects() {
         const response = await fetch(`/api/teachers/${user.id}/subjects`, {
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         })
 
@@ -62,18 +64,15 @@ export default function TeacherSubjects() {
           const data = await response.json()
           setSubjects(data)
         } else {
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Failed to fetch subjects",
-          })
+          const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
+          throw new Error(errorData.error || "Failed to fetch subjects")
         }
       } catch (error) {
-        console.error("Fetch subjects error:", error)
+        console.error("Error fetching subjects:", error)
         toast({
           variant: "destructive",
           title: "Error",
-          description: "An error occurred while fetching subjects",
+          description: error instanceof Error ? error.message : "An error occurred while fetching subjects",
         })
       } finally {
         setIsLoading(false)
@@ -96,14 +95,15 @@ export default function TeacherSubjects() {
       subject.sclass.sclassName.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const totalStudents = subjects.reduce((sum, subject) => sum + subject.students.length, 0)
-  const totalClasses = new Set(subjects.map((subject) => subject.sclass.id)).size
+  const totalStudents = subjects.length > 0 ? subjects[0].students.length : 0
+  const totalClasses = subjects.length > 0 ? 1 : 0 // Teacher is assigned to one class
+  const mySubjects = subjects.filter((subject) => subject.isTeaching).length
 
   return (
     <DashboardLayout title="My Subjects" requiredRole="Teacher">
       <div className="space-y-6">
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Subjects</CardTitle>
@@ -111,6 +111,16 @@ export default function TeacherSubjects() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{subjects.length}</div>
+              <p className="text-xs text-muted-foreground">In your class</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Teaching</CardTitle>
+              <BookOpen className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{mySubjects}</div>
               <p className="text-xs text-muted-foreground">Subjects you teach</p>
             </CardContent>
           </Card>
@@ -121,17 +131,17 @@ export default function TeacherSubjects() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{totalStudents}</div>
-              <p className="text-xs text-muted-foreground">Across all subjects</p>
+              <p className="text-xs text-muted-foreground">In your class</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Classes</CardTitle>
+              <CardTitle className="text-sm font-medium">Class</CardTitle>
               <GraduationCap className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{totalClasses}</div>
-              <p className="text-xs text-muted-foreground">Different classes</p>
+              <p className="text-xs text-muted-foreground">Assigned class</p>
             </CardContent>
           </Card>
         </div>
@@ -140,8 +150,8 @@ export default function TeacherSubjects() {
           <CardHeader>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between">
               <div>
-                <CardTitle>Subjects</CardTitle>
-                <CardDescription>View and manage the subjects you teach.</CardDescription>
+                <CardTitle>Class Subjects</CardTitle>
+                <CardDescription>View and manage all subjects in your assigned class.</CardDescription>
               </div>
               <div className="mt-4 md:mt-0">
                 <div className="relative">
@@ -167,7 +177,7 @@ export default function TeacherSubjects() {
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground">
-                  {searchTerm ? "No subjects match your search." : "No subjects assigned to you yet."}
+                  {searchTerm ? "No subjects match your search." : "No subjects found in your class."}
                 </p>
               </div>
             ) : (
@@ -178,9 +188,10 @@ export default function TeacherSubjects() {
                       <div className="flex items-center justify-between">
                         <div>
                           <CardTitle className="text-lg">{subject.subName}</CardTitle>
-                          <Badge variant="secondary" className="mt-1">
-                            {subject.subCode}
-                          </Badge>
+                          <div className="flex gap-2 mt-1">
+                            <Badge variant="secondary">{subject.subCode}</Badge>
+                            {subject.isTeaching && <Badge variant="default">Teaching</Badge>}
+                          </div>
                         </div>
                         <Button variant="outline" size="sm" onClick={() => handleViewSubject(subject)}>
                           <Eye className="h-4 w-4 mr-1" />
