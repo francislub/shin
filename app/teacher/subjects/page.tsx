@@ -1,237 +1,286 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useAuth } from "@/context/auth-context"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
+import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/components/ui/use-toast"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { BookOpenCheck, GraduationCap, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { BookOpen, Users, GraduationCap, Search, Eye } from "lucide-react"
+import { useAuth } from "@/context/auth-context"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 interface Subject {
   id: string
-  name: string
-  code: string
-  description: string
-  classes: {
+  subName: string
+  subCode: string
+  sessions: number
+  sclass: {
+    id: string
+    sclassName: string
+  }
+  students: Array<{
     id: string
     name: string
-    section: string
-  }[]
-  students: {
-    id: string
-    firstName: string
-    lastName: string
-    admissionNumber: string
-    photoUrl?: string
-  }[]
+    rollNum: string
+    email?: string
+  }>
 }
 
-export default function TeacherSubjectsPage() {
-  const { user, token } = useAuth()
-  const { toast } = useToast()
+export default function TeacherSubjects() {
   const [subjects, setSubjects] = useState<Subject[]>([])
-  const [loading, setLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState("")
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null)
-  const [viewDialogOpen, setViewDialogOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState("classes")
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
+  const { toast } = useToast()
+  const { user } = useAuth()
 
   useEffect(() => {
-    if (token) {
-      fetchSubjects()
-    }
-  }, [token])
+    const fetchSubjects = async () => {
+      try {
+        const token = localStorage.getItem("token")
 
-  const fetchSubjects = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch(`/api/subjects?teacherId=${user?.id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+        if (!token || !user) {
+          toast({
+            title: "Authentication Error",
+            description: "Please log in again.",
+            variant: "destructive",
+          })
+          return
+        }
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch subjects")
+        const response = await fetch(`/api/teachers/${user.id}/subjects`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          setSubjects(data)
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to fetch subjects",
+          })
+        }
+      } catch (error) {
+        console.error("Fetch subjects error:", error)
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "An error occurred while fetching subjects",
+        })
+      } finally {
+        setIsLoading(false)
       }
-
-      const data = await response.json()
-      setSubjects(data)
-    } catch (error) {
-      console.error("Error fetching subjects:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load subjects. Please try again later.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
     }
-  }
 
-  const viewSubjectDetails = (subject: Subject) => {
+    fetchSubjects()
+  }, [toast, user])
+
+  const handleViewSubject = (subject: Subject) => {
     setSelectedSubject(subject)
-    setViewDialogOpen(true)
+    setIsViewDialogOpen(true)
   }
 
-  const getInitials = (firstName: string, lastName: string) => {
-    return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
-  }
+  // Filter subjects based on search term
+  const filteredSubjects = subjects.filter(
+    (subject) =>
+      subject.subName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      subject.subCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      subject.sclass.sclassName.toLowerCase().includes(searchTerm.toLowerCase()),
+  )
+
+  const totalStudents = subjects.reduce((sum, subject) => sum + subject.students.length, 0)
+  const totalClasses = new Set(subjects.map((subject) => subject.sclass.id)).size
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Subjects</h1>
-        <p className="text-muted-foreground">View and manage your assigned subjects.</p>
-      </div>
-      <Separator />
+    <DashboardLayout title="My Subjects" requiredRole="Teacher">
+      <div className="space-y-6">
+        {/* Stats Cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Subjects</CardTitle>
+              <BookOpen className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{subjects.length}</div>
+              <p className="text-xs text-muted-foreground">Subjects you teach</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Students</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalStudents}</div>
+              <p className="text-xs text-muted-foreground">Across all subjects</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Classes</CardTitle>
+              <GraduationCap className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalClasses}</div>
+              <p className="text-xs text-muted-foreground">Different classes</p>
+            </CardContent>
+          </Card>
+        </div>
 
-      {loading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader>
-                <div className="h-6 w-24 rounded bg-gray-200 dark:bg-gray-700"></div>
-                <div className="h-5 w-32 rounded bg-gray-200 dark:bg-gray-700"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-16 rounded bg-gray-200 dark:bg-gray-700"></div>
-              </CardContent>
-              <CardFooter>
-                <div className="h-9 w-full rounded bg-gray-200 dark:bg-gray-700"></div>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
-      ) : subjects.length === 0 ? (
-        <div className="flex h-[400px] flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
-          <BookOpenCheck className="h-10 w-10 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-semibold">No subjects assigned</h3>
-          <p className="mb-4 mt-2 text-sm text-muted-foreground">You don't have any subjects assigned to you yet.</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {subjects.map((subject) => (
-            <Card key={subject.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>{subject.name}</CardTitle>
-                  <Badge variant="outline">{subject.code}</Badge>
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+              <div>
+                <CardTitle>Subjects</CardTitle>
+                <CardDescription>View and manage the subjects you teach.</CardDescription>
+              </div>
+              <div className="mt-4 md:mt-0">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Search subjects..."
+                    className="w-full md:w-[200px] pl-8"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
                 </div>
-                <CardDescription>
-                  {subject.classes?.length || 0} {subject.classes?.length === 1 ? "class" : "classes"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="line-clamp-3 text-sm">{subject.description}</p>
-              </CardContent>
-              <CardFooter>
-                <Button variant="outline" className="w-full" onClick={() => viewSubjectDetails(subject)}>
-                  View Details
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
-      )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="space-y-4">
+                <div className="h-8 w-full animate-pulse rounded bg-muted"></div>
+                <div className="h-64 w-full animate-pulse rounded bg-muted"></div>
+              </div>
+            ) : filteredSubjects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">
+                  {searchTerm ? "No subjects match your search." : "No subjects assigned to you yet."}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {filteredSubjects.map((subject) => (
+                  <Card key={subject.id} className="hover:shadow-md transition-shadow">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-lg">{subject.subName}</CardTitle>
+                          <Badge variant="secondary" className="mt-1">
+                            {subject.subCode}
+                          </Badge>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => handleViewSubject(subject)}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Class:</span>
+                          <span className="font-medium">{subject.sclass.sclassName}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Students:</span>
+                          <span className="font-medium">{subject.students.length}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Sessions:</span>
+                          <span className="font-medium">{subject.sessions}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-      {/* Subject Details Dialog */}
-      {selectedSubject && (
-        <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DialogContent className="sm:max-w-[600px]">
+        {/* View Subject Dialog */}
+        <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+          <DialogContent className="max-w-4xl">
             <DialogHeader>
               <DialogTitle>
-                {selectedSubject.name} ({selectedSubject.code})
+                {selectedSubject?.subName} ({selectedSubject?.subCode})
               </DialogTitle>
-              <DialogDescription>{selectedSubject.description}</DialogDescription>
+              <DialogDescription>Subject details and enrolled students</DialogDescription>
             </DialogHeader>
+            {selectedSubject && (
+              <div className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm">Class</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-lg font-semibold">{selectedSubject.sclass.sclassName}</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm">Students</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-lg font-semibold">{selectedSubject.students.length}</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm">Sessions</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-lg font-semibold">{selectedSubject.sessions}</p>
+                    </CardContent>
+                  </Card>
+                </div>
 
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="classes" className="flex items-center gap-2">
-                  <GraduationCap className="h-4 w-4" />
-                  Classes ({selectedSubject.classes?.length || 0})
-                </TabsTrigger>
-                <TabsTrigger value="students" className="flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Students ({selectedSubject.students?.length || 0})
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="classes" className="mt-4">
-                {selectedSubject.classes?.length === 0 ? (
-                  <div className="flex h-[200px] flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center">
-                    <GraduationCap className="h-8 w-8 text-muted-foreground" />
-                    <h3 className="mt-2 text-base font-semibold">No classes</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      This subject is not assigned to any classes yet.
-                    </p>
-                  </div>
-                ) : (
-                  <ScrollArea className="h-[300px]">
-                    <div className="space-y-2">
-                      {selectedSubject.classes?.map((cls) => (
-                        <div key={cls.id} className="flex items-center justify-between rounded-md border p-3">
-                          <div>
-                            <p className="font-medium">{cls.name}</p>
-                            <p className="text-xs text-muted-foreground">Section: {cls.section}</p>
-                          </div>
-                          <Badge variant="outline">{cls.name}</Badge>
-                        </div>
-                      ))}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Enrolled Students</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="max-h-60 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Roll Number</TableHead>
+                            <TableHead>Email</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedSubject.students.map((student) => (
+                            <TableRow key={student.id}>
+                              <TableCell className="font-medium">{student.name}</TableCell>
+                              <TableCell>{student.rollNum}</TableCell>
+                              <TableCell>{student.email || "Not provided"}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     </div>
-                  </ScrollArea>
-                )}
-              </TabsContent>
-
-              <TabsContent value="students" className="mt-4">
-                {selectedSubject.students?.length === 0 ? (
-                  <div className="flex h-[200px] flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center">
-                    <Users className="h-8 w-8 text-muted-foreground" />
-                    <h3 className="mt-2 text-base font-semibold">No students</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">There are no students taking this subject yet.</p>
-                  </div>
-                ) : (
-                  <ScrollArea className="h-[300px]">
-                    <div className="space-y-2">
-                      {selectedSubject.students?.map((student) => (
-                        <div key={student.id} className="flex items-center gap-3 rounded-md border p-2">
-                          <Avatar className="h-10 w-10">
-                            {student.photoUrl ? (
-                              <AvatarImage
-                                src={student.photoUrl || "/placeholder.svg"}
-                                alt={`${student.firstName} ${student.lastName}`}
-                              />
-                            ) : null}
-                            <AvatarFallback>{getInitials(student.firstName, student.lastName)}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1">
-                            <p className="font-medium">
-                              {student.firstName} {student.lastName}
-                            </p>
-                            <p className="text-xs text-muted-foreground">{student.admissionNumber}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                )}
-              </TabsContent>
-            </Tabs>
-
-            <div className="flex justify-end">
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                Close
-              </Button>
-            </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
-      )}
-    </div>
+      </div>
+    </DashboardLayout>
   )
 }

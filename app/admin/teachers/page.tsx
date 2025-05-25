@@ -203,7 +203,10 @@ export default function AdminTeachers() {
   }
 
   const handleSelectChange = (name: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [name]: value }))
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value === "unassigned" ? "" : value,
+    }))
     // Clear error when user selects
     if (formErrors[name as keyof typeof formErrors]) {
       setFormErrors((prev) => ({ ...prev, [name]: "" }))
@@ -557,7 +560,7 @@ export default function AdminTeachers() {
                   <SelectValue placeholder="Select a subject" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="not_assigned">Not Assigned</SelectItem>
+                  <SelectItem value="unassigned">Not Assigned</SelectItem>
                   {subjects.map((subject) => (
                     <SelectItem key={subject.id} value={subject.id}>
                       {subject.subName}
