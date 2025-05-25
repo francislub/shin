@@ -17,47 +17,54 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    const classId = req.nextUrl.searchParams.get("classId")
-    const subjectId = req.nextUrl.searchParams.get("subjectId")
-    const date = req.nextUrl.searchParams.get("date")
-    const studentId = req.nextUrl.searchParams.get("studentId")
-    const teacherId = req.nextUrl.searchParams.get("teacherId")
+    const url = new URL(req.url)
+    const classId = url.searchParams.get("classId")
+    const sclassId = url.searchParams.get("sclassId") || classId // Support both
+    const date = url.searchParams.get("date")
+    const teacherId = url.searchParams.get("teacherId")
 
     const whereClause: any = {}
 
-    if (classId) {
-      whereClause.classId = classId
-    }
+    if (sclassId) whereClause.sclassId = sclassId
+    if (date) whereClause.date = new Date(date)
+    if (teacherId) whereClause.teacherId = teacherId
 
-    if (subjectId) {
-      whereClause.subjectId = subjectId
-    }
-
-    if (date) {
-      whereClause.date = new Date(date)
-    }
-
-    if (studentId) {
-      whereClause.studentId = studentId
-    }
-
-    if (teacherId) {
-      whereClause.teacherId = teacherId
-    }
-
-    const attendance = await prisma.attendance.findMany({
+    const attendanceRecords = await prisma.attendanceRecord.findMany({
       where: whereClause,
-      orderBy: { date: "desc" },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            rollNum: true,
+          },
+        },
+        sclass: {
+          select: {
+            id: true,
+            sclassName: true,
+          },
+        },
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        date: "desc",
+      },
     })
 
-    return NextResponse.json(attendance)
+    return NextResponse.json(attendanceRecords)
   } catch (error) {
     console.error("Get attendance error:", error)
     return NextResponse.json({ error: "Something went wrong while fetching attendance" }, { status: 500 })
   }
 }
 
-// Create new attendance records
+// Create attendance records
 export async function POST(req: NextRequest) {
   try {
     const token = req.headers.get("authorization")?.split(" ")[1]
@@ -68,37 +75,45 @@ export async function POST(req: NextRequest) {
 
     const decoded = verifyToken(token)
 
-    if (!decoded || (decoded.role !== "Admin" && decoded.role !== "Teacher")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (!decoded) {
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    const body = await req.json()
-    const { classId, subjectId, date, teacherId, attendanceRecords } = body
+    const { date, sclassId, teacherId, records } = await req.json()
 
-    if (!classId || !subjectId || !date || !teacherId || !attendanceRecords) {
+    if (!date || !sclassId || !teacherId || !records || !Array.isArray(records)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
     // Create attendance records for each student
-    const createdRecords = await Promise.all(
-      attendanceRecords.map(async (record: { studentId: string; status: string }) => {
-        return prisma.attendance.create({
+    const attendanceRecords = await Promise.all(
+      records.map((record: any) =>
+        prisma.attendanceRecord.create({
           data: {
             date: new Date(date),
             status: record.status,
-            class: { connect: { id: classId } },
-            subject: { connect: { id: subjectId } },
-            teacher: { connect: { id: teacherId } },
-            student: { connect: { id: record.studentId } },
+            studentId: record.studentId,
+            sclassId,
+            teacherId,
+            schoolId: decoded.id, // Assuming the token contains school ID
           },
-        })
-      }),
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+                rollNum: true,
+              },
+            },
+          },
+        }),
+      ),
     )
 
-    return NextResponse.json(createdRecords, { status: 201 })
+    return NextResponse.json(attendanceRecords)
   } catch (error) {
     console.error("Create attendance error:", error)
-    return NextResponse.json({ error: "Something went wrong while creating attendance records" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while creating attendance" }, { status: 500 })
   }
 }
 
@@ -113,45 +128,53 @@ export async function PUT(req: NextRequest) {
 
     const decoded = verifyToken(token)
 
-    if (!decoded || (decoded.role !== "Admin" && decoded.role !== "Teacher")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (!decoded) {
+      return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    const body = await req.json()
-    const { classId, subjectId, date, attendanceRecords } = body
+    const { date, sclassId, teacherId, records } = await req.json()
 
-    if (!classId || !subjectId || !date || !attendanceRecords) {
+    if (!date || !sclassId || !teacherId || !records || !Array.isArray(records)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // First, delete existing records for this class, subject, and date
-    await prisma.attendance.deleteMany({
+    // Delete existing records for this date, class, and teacher
+    await prisma.attendanceRecord.deleteMany({
       where: {
-        classId,
-        subjectId,
         date: new Date(date),
+        sclassId,
+        teacherId,
       },
     })
 
-    // Then create new records
-    const updatedRecords = await Promise.all(
-      attendanceRecords.map(async (record: { studentId: string; status: string }) => {
-        return prisma.attendance.create({
+    // Create new attendance records
+    const attendanceRecords = await Promise.all(
+      records.map((record: any) =>
+        prisma.attendanceRecord.create({
           data: {
             date: new Date(date),
             status: record.status,
-            class: { connect: { id: classId } },
-            subject: { connect: { id: subjectId } },
-            teacher: { connect: { id: decoded.id } },
-            student: { connect: { id: record.studentId } },
+            studentId: record.studentId,
+            sclassId,
+            teacherId,
+            schoolId: decoded.id,
           },
-        })
-      }),
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+                rollNum: true,
+              },
+            },
+          },
+        }),
+      ),
     )
 
-    return NextResponse.json(updatedRecords)
+    return NextResponse.json(attendanceRecords)
   } catch (error) {
     console.error("Update attendance error:", error)
-    return NextResponse.json({ error: "Something went wrong while updating attendance records" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while updating attendance" }, { status: 500 })
   }
 }

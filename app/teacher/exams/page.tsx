@@ -79,9 +79,10 @@ export default function TeacherExamsPage() {
   const fetchClasses = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/classes?teacherId=${user?.id}`, {
+      const response = await fetch(`/api/teachers/${user?.id}/classes`, {
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
       })
 
@@ -106,9 +107,10 @@ export default function TeacherExamsPage() {
   const fetchSubjects = async (classId: string) => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/subjects?teacherId=${user?.id}&classId=${classId}`, {
+      const response = await fetch(`/api/teachers/${user?.id}/subjects`, {
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
       })
 
@@ -117,7 +119,9 @@ export default function TeacherExamsPage() {
       }
 
       const data = await response.json()
-      setSubjects(data)
+      // Filter subjects for the selected class
+      const classSubjects = data.filter((subject: any) => subject.sclass.id === classId)
+      setSubjects(classSubjects)
       setSelectedSubject("")
     } catch (error) {
       console.error("Error fetching subjects:", error)
@@ -136,9 +140,10 @@ export default function TeacherExamsPage() {
 
     try {
       setLoading(true)
-      const response = await fetch(`/api/students?classId=${selectedClass}&subjectId=${selectedSubject}`, {
+      const response = await fetch(`/api/teachers/${user?.id}/students`, {
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
       })
 
@@ -175,10 +180,11 @@ export default function TeacherExamsPage() {
 
     try {
       const response = await fetch(
-        `/api/exams?classId=${selectedClass}&subjectId=${selectedSubject}&examType=${selectedExamType}`,
+        `/api/exams?classId=${selectedClass}&subjectId=${selectedSubject}&examType=${selectedExamType}&teacherId=${user?.id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         },
       )
@@ -196,7 +202,7 @@ export default function TeacherExamsPage() {
         // Map the existing results to our format
         const existingResults = data.map((result: any) => ({
           studentId: result.studentId,
-          marks: result.marks,
+          marks: result.marksObtained,
         }))
 
         setExamResults(existingResults)
@@ -210,9 +216,9 @@ export default function TeacherExamsPage() {
               results: resultRecord
                 ? {
                     id: resultRecord.id,
-                    examType: resultRecord.examType,
-                    marks: resultRecord.marks,
-                    totalMarks: resultRecord.totalMarks,
+                    examType: resultRecord.exam.examType,
+                    marks: resultRecord.marksObtained,
+                    totalMarks: resultRecord.exam.totalMarks,
                     grade: resultRecord.grade,
                   }
                 : undefined,
@@ -262,19 +268,27 @@ export default function TeacherExamsPage() {
     try {
       setIsSubmitting(true)
 
-      const response = await fetch("/api/exams", {
-        method: existingResults ? "PUT" : "POST",
+      const response = await fetch("/api/admin/exams", {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          classId: selectedClass,
-          subjectId: selectedSubject,
+          examName: `${selectedExamType === "BOT" ? "Beginning of Term" : selectedExamType === "MID" ? "Mid-Term" : "End of Term"} Exam`,
           examType: selectedExamType,
-          teacherId: user?.id,
+          startDate: new Date().toISOString(),
+          endDate: new Date().toISOString(),
           totalMarks,
-          examResults,
+          passingMarks: Math.floor(totalMarks * 0.4), // 40% passing
+          subjectId: selectedSubject,
+          sclassId: selectedClass,
+          termId: "current", // You might need to get current term
+          teacherId: user?.id,
+          results: examResults.map((result) => ({
+            studentId: result.studentId,
+            marksObtained: result.marks,
+          })),
         }),
       })
 
@@ -284,7 +298,7 @@ export default function TeacherExamsPage() {
 
       toast({
         title: "Success",
-        description: `Exam results ${existingResults ? "updated" : "saved"} successfully`,
+        description: "Exam results saved successfully",
       })
 
       // Refresh the results data

@@ -22,12 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const teacher = await prisma.teacher.findUnique({
       where: { id },
       include: {
-        teachSclass: {
-          select: {
-            id: true,
-            sclassName: true,
-          },
-        },
+        teachSclass: true,
       },
     })
 
@@ -35,60 +30,40 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
     }
 
+    if (!teacher.teachSclass) {
+      return NextResponse.json([]) // Return empty array if no class assigned
+    }
+
     // Get all students in the teacher's assigned class
     const students = await prisma.student.findMany({
       where: {
         sclassId: teacher.teachSclassId,
       },
-      include: {
-        sclass: {
-          select: {
-            id: true,
-            sclassName: true,
-          },
-        },
-        parent: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-          },
-        },
-      },
-      orderBy: {
-        rollNum: "asc",
+      select: {
+        id: true,
+        name: true,
+        rollNum: true,
+        photo: true,
+        gender: true,
       },
     })
 
-    // Transform the response
-    const studentsData = students.map((student) => ({
+    // Transform the response to match frontend expectations
+    const studentsWithDetails = students.map((student) => ({
       id: student.id,
+      firstName: student.name.split(" ")[0] || student.name, // Split name for firstName
+      lastName: student.name.split(" ").slice(1).join(" ") || "", // Split name for lastName
       name: student.name,
+      admissionNumber: student.rollNum, // Map rollNum to admissionNumber
       rollNum: student.rollNum,
-      gender: student.gender,
+      photoUrl: student.photo,
       photo: student.photo,
-      class: {
-        id: student.sclass.id,
-        name: student.sclass.sclassName,
-      },
-      parent: student.parent
-        ? {
-            id: student.parent.id,
-            name: student.parent.name,
-            email: student.parent.email,
-            phone: student.parent.phone,
-          }
-        : null,
-      discipline: student.discipline,
-      timeManagement: student.timeManagement,
-      smartness: student.smartness,
-      attendanceRemarks: student.attendanceRemarks,
+      gender: student.gender,
     }))
 
-    return NextResponse.json(studentsData)
+    return NextResponse.json(studentsWithDetails)
   } catch (error) {
     console.error("Get teacher students error:", error)
-    return NextResponse.json({ error: "Something went wrong while fetching students" }, { status: 500 })
+    return NextResponse.json({ error: "Something went wrong while fetching teacher students" }, { status: 500 })
   }
 }

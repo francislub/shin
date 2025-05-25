@@ -26,6 +26,7 @@ interface Subject {
   id: string
   name: string
   code: string
+  sclass: { id: string }
 }
 
 interface Student {
@@ -69,9 +70,10 @@ export default function TeacherAttendancePage() {
   const fetchClasses = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/classes?teacherId=${user?.id}`, {
+      const response = await fetch(`/api/teachers/${user?.id}/classes`, {
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
       })
 
@@ -96,9 +98,10 @@ export default function TeacherAttendancePage() {
   const fetchSubjects = async (classId: string) => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/subjects?teacherId=${user?.id}&classId=${classId}`, {
+      const response = await fetch(`/api/teachers/${user?.id}/subjects`, {
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
       })
 
@@ -107,7 +110,9 @@ export default function TeacherAttendancePage() {
       }
 
       const data = await response.json()
-      setSubjects(data)
+      // Filter subjects for the selected class
+      const classSubjects = data.filter((subject: any) => subject.sclass.id === classId)
+      setSubjects(classSubjects)
       setSelectedSubject("")
     } catch (error) {
       console.error("Error fetching subjects:", error)
@@ -126,9 +131,10 @@ export default function TeacherAttendancePage() {
 
     try {
       setLoading(true)
-      const response = await fetch(`/api/students?classId=${selectedClass}&subjectId=${selectedSubject}`, {
+      const response = await fetch(`/api/teachers/${user?.id}/students`, {
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
       })
 
@@ -166,10 +172,11 @@ export default function TeacherAttendancePage() {
     try {
       const formattedDate = format(date, "yyyy-MM-dd")
       const response = await fetch(
-        `/api/attendance?classId=${selectedClass}&subjectId=${selectedSubject}&date=${formattedDate}`,
+        `/api/attendance?classId=${selectedClass}&subjectId=${selectedSubject}&date=${formattedDate}&teacherId=${user?.id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         },
       )
@@ -254,11 +261,13 @@ export default function TeacherAttendancePage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          classId: selectedClass,
-          subjectId: selectedSubject,
           date: formattedDate,
+          sclassId: selectedClass,
           teacherId: user?.id,
-          attendanceRecords,
+          records: attendanceRecords.map((record) => ({
+            studentId: record.studentId,
+            status: record.status,
+          })),
         }),
       })
 
