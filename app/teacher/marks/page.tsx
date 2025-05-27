@@ -357,16 +357,11 @@ export default function TeacherMarksPage() {
       console.log("Results data:", data)
 
       if (response.ok && data.success) {
-        const results = data.results || []
-        setResults(results)
-        console.log("Results set successfully:", results.length, "results")
-      } else {
-        console.error("Failed to fetch results:", data)
-        setResults([])
+        setResults(data.results)
+        console.log("Results set successfully:", data.results.length, "results")
       }
     } catch (error: any) {
       console.error("Error fetching results:", error)
-      setResults([])
     }
   }
 

@@ -23,6 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       where: { id },
       include: {
         teachSclass: true,
+        teachSubject: true,
       },
     })
 
@@ -34,32 +35,62 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json([]) // Return empty array if no class assigned
     }
 
-    // Get all students in the teacher's assigned class
+    // Get all students in the teacher's assigned class with complete data
     const students = await prisma.student.findMany({
       where: {
         sclassId: teacher.teachSclassId,
       },
-      select: {
-        id: true,
-        name: true,
-        rollNum: true,
-        photo: true,
-        gender: true,
+      include: {
+        sclass: {
+          select: {
+            id: true,
+            sclassName: true,
+          },
+        },
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+        examResult: {
+          include: {
+            subject: {
+              select: {
+                id: true,
+                subName: true,
+                subCode: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        rollNum: "asc",
       },
     })
 
-    // Transform the response to match frontend expectations
-    const studentsWithDetails = students.map((student) => ({
-      id: student.id,
-      firstName: student.name.split(" ")[0] || student.name, // Split name for firstName
-      lastName: student.name.split(" ").slice(1).join(" ") || "", // Split name for lastName
-      name: student.name,
-      admissionNumber: student.rollNum, // Map rollNum to admissionNumber
-      rollNum: student.rollNum,
-      photoUrl: student.photo,
-      photo: student.photo,
-      gender: student.gender,
-    }))
+    // Transform the response to include subjects from exam results
+    const studentsWithDetails = students.map((student) => {
+      // Get unique subjects from exam results
+      const subjects = student.examResult
+        .map((result) => result.subject)
+        .filter((subject, index, self) => index === self.findIndex((s) => s.id === subject.id))
+
+      return {
+        id: student.id,
+        name: student.name,
+        rollNum: student.rollNum,
+        email: student.email,
+        gender: student.gender,
+        photo: student.photo,
+        sclass: student.sclass,
+        parent: student.parent,
+        subjects: subjects,
+      }
+    })
 
     return NextResponse.json(studentsWithDetails)
   } catch (error) {

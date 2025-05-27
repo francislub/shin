@@ -19,9 +19,15 @@ interface Student {
   email?: string
   gender?: string
   photo?: string
-  sclass: {
+  sclass?: {
     id: string
     sclassName: string
+  }
+  parent?: {
+    id: string
+    name: string
+    email: string
+    phone?: string
   }
   subjects: Array<{
     id: string
@@ -71,31 +77,28 @@ export default function TeacherStudents() {
           return
         }
 
-        // Fetch teacher's classes
-        const classesResponse = await fetch(`/api/teachers/${user.id}/classes`, {
+        // Fetch teacher details first to get their class and subject
+        const teacherResponse = await fetch(`/api/teachers/${user.id}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         })
 
-        if (classesResponse.ok) {
-          const classesData = await classesResponse.json()
-          setClasses(classesData)
+        if (teacherResponse.ok) {
+          const teacherData = await teacherResponse.json()
+
+          // Set classes based on teacher's assigned class
+          if (teacherData.teachSclass) {
+            setClasses([teacherData.teachSclass])
+          }
+
+          // Set subjects based on teacher's assigned subject
+          if (teacherData.teachSubject) {
+            setSubjects([teacherData.teachSubject])
+          }
         }
 
-        // Fetch teacher's subjects
-        const subjectsResponse = await fetch(`/api/teachers/${user.id}/subjects`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        })
-
-        if (subjectsResponse.ok) {
-          const subjectsData = await subjectsResponse.json()
-          setSubjects(subjectsData)
-        }
-
-        // Fetch all students from teacher's classes
+        // Fetch students from teacher's class
         const studentsResponse = await fetch(`/api/teachers/${user.id}/students`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -134,7 +137,7 @@ export default function TeacherStudents() {
       student.rollNum.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (student.email && student.email.toLowerCase().includes(searchTerm.toLowerCase()))
 
-    const matchesClass = selectedClass === "all" || student.sclass.id === selectedClass
+    const matchesClass = selectedClass === "all" || (student.sclass && student.sclass.id === selectedClass)
 
     const matchesSubject =
       selectedSubject === "all" || student.subjects.some((subject) => subject.id === selectedSubject)
@@ -275,7 +278,7 @@ export default function TeacherStudents() {
                         <TableCell>
                           <Badge variant="outline">{student.rollNum}</Badge>
                         </TableCell>
-                        <TableCell>{student.sclass.sclassName}</TableCell>
+                        <TableCell>{student.sclass?.sclassName || "No class assigned"}</TableCell>
                         <TableCell>
                           <div className="max-w-[200px] truncate" title={getStudentSubjects(student)}>
                             {getStudentSubjects(student) || "No subjects assigned"}

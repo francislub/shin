@@ -13,6 +13,7 @@ interface User {
 
 interface AuthContextType {
   user: User | null
+  token: string | null
   isLoading: boolean
   login: (email: string, password: string, role: string) => Promise<boolean>
   logout: () => void
@@ -26,6 +27,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const { toast } = useToast()
@@ -54,13 +56,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Internal logout function that doesn't depend on state or props
   const logoutInternal = () => {
     try {
-      const token = localStorage.getItem("token")
-      if (token) {
+      const currentToken = localStorage.getItem("token")
+      if (currentToken) {
         // Use a fire-and-forget approach for the logout API call
         fetch("/api/auth/logout", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${currentToken}`,
           },
         }).catch((error) => {
           console.error("Logout API error:", error)
@@ -80,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Update React state last to avoid triggering effects too early
       setUser(null)
+      setToken(null)
 
       // Navigate to login
       router.push("/login")
@@ -99,15 +102,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initialAuthCheck = async () => {
       try {
-        const token = localStorage.getItem("token")
+        const storedToken = localStorage.getItem("token")
         const userData = localStorage.getItem("userData")
 
-        if (!token) {
+        console.log("Initial auth check:", {
+          token: storedToken ? "Present" : "Missing",
+          userData: userData ? "Present" : "Missing",
+        })
+
+        if (!storedToken) {
           setUser(null)
+          setToken(null)
           setIsLoading(false)
           isAuthenticatedRef.current = false
           return
         }
+
+        // Set token immediately
+        setToken(storedToken)
 
         // Use cached data immediately if available
         if (userData) {
@@ -115,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const parsedUser = JSON.parse(userData)
             setUser(parsedUser)
             isAuthenticatedRef.current = true
+            console.log("User data loaded from cache:", parsedUser)
           } catch (e) {
             console.error("Failed to parse user data:", e)
             localStorage.removeItem("userData")
@@ -125,25 +138,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const response = await fetch("/api/auth/verify", {
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${storedToken}`,
             },
           })
 
           if (response.ok) {
             const userData = await response.json()
             setUser(userData)
+            setToken(storedToken)
             localStorage.setItem("userData", JSON.stringify(userData))
             isAuthenticatedRef.current = true
+            console.log("Token verified successfully:", userData)
           } else {
             // Token invalid
+            console.log("Token verification failed, clearing auth data")
             localStorage.removeItem("token")
             localStorage.removeItem("userData")
             setUser(null)
+            setToken(null)
             isAuthenticatedRef.current = false
           }
         } catch (error) {
           console.error("Auth verification error:", error)
-          // Don't log out on network errors
+          // Don't log out on network errors, keep cached data
         }
       } finally {
         setIsLoading(false)
@@ -194,9 +211,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const token = localStorage.getItem("token")
+      const currentToken = localStorage.getItem("token")
 
-      if (!token) {
+      if (!currentToken) {
         return false
       }
 
@@ -235,7 +252,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Update state
         setUser(data.user)
+        setToken(data.token)
         isAuthenticatedRef.current = true
+
+        console.log("Login successful:", {
+          user: data.user,
+          token: data.token ? "Present" : "Missing",
+        })
 
         // Reset inactivity timer
         resetInactivityTimer()
@@ -276,6 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = {
     user,
+    token,
     isLoading,
     login,
     logout,

@@ -75,21 +75,12 @@ export default function LoginPage() {
       <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8">
         <div className="w-full max-w-md">
           <div className="flex items-center mb-8">
-            <div className="bg-primary rounded-full p-2 mr-2">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-                <path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5" />
-              </svg>
+            <div className=" rounded-full p-2 mr-2">
+            <img
+              src="/log.jpg" // Replace with your actual logo path
+              alt="Logo"
+              className="w-8 h-8 object-contain rounded-full"
+            />
             </div>
             <h1 className="text-2xl font-bold">Shining Stars</h1>
           </div>

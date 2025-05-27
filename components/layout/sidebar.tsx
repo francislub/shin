@@ -93,7 +93,8 @@ export function Sidebar({ className, onClose }: SidebarProps) {
           { href: "/teacher/classes", label: "Classes", icon: BookOpen },
           { href: "/teacher/subjects", label: "Subjects", icon: BookOpenCheck },
           { href: "/teacher/attendance", label: "Attendance", icon: Clock },
-          { href: "/teacher/exams", label: "Exams", icon: ClipboardList },
+          // { href: "/teacher/exams", label: "Exams", icon: ClipboardList },
+          { href: "/teacher/marks", label: "Marks", icon: Award },
           { href: "/teacher/class-teacher-comments", label: "CT Comments", icon: MessageSquare },
           // { href: "/teacher/report-cards", label: "Report Cards", icon: FileText },
           { href: "/teacher/notices", label: "Notices", icon: Bell },
@@ -149,7 +150,12 @@ export function Sidebar({ className, onClose }: SidebarProps) {
     >
       <div className="flex h-16 items-center border-b border-gray-700 px-6">
         <Link href="/" className="flex items-center gap-2 font-bold">
-          <School className="h-6 w-6" />
+          {/* <School className="h-6 w-6" /> */}
+          <img
+              src="/log.jpg" // Replace with your actual logo path
+              alt="Logo"
+              className="w-8 h-8 object-contain rounded-full"
+            />
           <span className="text-xl">School Management</span>
         </Link>
       </div>
