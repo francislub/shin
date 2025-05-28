@@ -107,12 +107,17 @@ export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
             <p>P.O.BOX 31007</p>
             <p>"Arise and shine"</p>
           </div>
-          <div className="w-20 h-20 bg-white border border-black flex items-center justify-center">
-            <span className="text-xs">SCHOOL LOGO</span>
+          <div className="w-20 h-20 border flex items-center justify-center">
+            {/* <span className="text-xs">SCHOOL LOGO</span> */}
+            <img
+              src="/log.jpg" // Replace with your actual logo path
+              alt="Logo"
+              className="object-contain rounded-full"
+            />
           </div>
           <div className="flex-1 text-left">
             <p>TEL: 0753753179, 0773297951</p>
-            <p>Email: school@example.com</p>
+            <p>Email: schoolvvumba@gmail.com.com</p>
           </div>
         </div>
         <p className="mt-2 font-semibold">"A Centre for Guaranteed excellence"</p>
