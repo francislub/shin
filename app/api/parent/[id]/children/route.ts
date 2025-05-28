@@ -2,8 +2,9 @@ import { type NextRequest, NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const resolvedParams = await params
     const token = req.headers.get("authorization")?.split(" ")[1]
 
     if (!token) {
@@ -16,9 +17,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const parentId = params.id
+    const parentId = resolvedParams.id
 
-    // Fetch children for the parent
+    // Verify the parent is accessing their own children
+    if (decoded.id !== parentId) {
+      return NextResponse.json({ error: "Forbidden: Cannot access other parent's children" }, { status: 403 })
+    }
+
+    // Fetch children for the parent with more details
     const children = await prisma.student.findMany({
       where: {
         parentId: parentId,
@@ -27,6 +33,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         id: true,
         name: true,
         rollNum: true,
+        gender: true,
+        photo: true,
         sclass: {
           select: {
             id: true,

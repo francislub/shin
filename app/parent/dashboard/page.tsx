@@ -37,6 +37,11 @@ export default function ParentDashboard() {
         const token = localStorage.getItem("token")
 
         if (!token) {
+          toast({
+            variant: "destructive",
+            title: "Authentication Error",
+            description: "Please log in to view dashboard",
+          })
           return
         }
 
@@ -46,22 +51,47 @@ export default function ParentDashboard() {
           },
         })
 
-        if (response.ok) {
-          const data = await response.json()
-          setStats(data)
-        } else {
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Failed to fetch dashboard statistics",
-          })
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
         }
+
+        const data = await response.json()
+
+        // Calculate total subjects from children's classes
+        const childrenResponse = await fetch(`/api/parent/children`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        let totalSubjects = 0
+        if (childrenResponse.ok) {
+          const children = await childrenResponse.json()
+          // Get unique subjects across all children's classes
+          const subjectPromises = children.map(async (child: any) => {
+            const subjectsResponse = await fetch(`/api/subjects?sclassId=${child.sclass?.id}`)
+            if (subjectsResponse.ok) {
+              return await subjectsResponse.json()
+            }
+            return []
+          })
+
+          const allSubjects = await Promise.all(subjectPromises)
+          const uniqueSubjects = new Set()
+          allSubjects.flat().forEach((subject: any) => uniqueSubjects.add(subject.id))
+          totalSubjects = uniqueSubjects.size
+        }
+
+        setStats({
+          ...data,
+          totalSubjects,
+        })
       } catch (error) {
         console.error("Dashboard stats error:", error)
         toast({
           variant: "destructive",
           title: "Error",
-          description: "An error occurred while fetching dashboard statistics",
+          description: "Failed to load dashboard data. Please try again.",
         })
       } finally {
         setIsLoading(false)

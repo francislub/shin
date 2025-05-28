@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useAuth } from "@/context/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -11,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { FileText, Download, ChevronDown, ChevronUp, Award, TrendingUp, BookOpen } from "lucide-react"
+import { useAuth } from "@/context/auth-context"
 
 interface Child {
   id: string
@@ -87,7 +87,24 @@ export default function ParentResultsPage() {
   const fetchChildren = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/parent/${user?.id}/children`)
+      const token = localStorage.getItem("token")
+
+      if (!token) {
+        toast({
+          title: "Authentication Error",
+          description: "Please log in again.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const response = await fetch(`/api/parent/children`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      })
+
       if (!response.ok) throw new Error("Failed to fetch children")
 
       const data = await response.json()
@@ -110,8 +127,28 @@ export default function ParentResultsPage() {
 
   const fetchTerms = async () => {
     try {
-      const response = await fetch(`/api/terms?schoolId=${user?.schoolId}`)
-      if (!response.ok) throw new Error("Failed to fetch terms")
+      const token = localStorage.getItem("token")
+
+      if (!token) {
+        toast({
+          title: "Authentication Error",
+          description: "Please log in again.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const response = await fetch(`/api/terms?schoolId=${user?.schoolId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        console.error(`HTTP error! status: ${response.status}`)
+        throw new Error(`Failed to fetch terms: ${response.status}`)
+      }
 
       const data = await response.json()
       setTerms(data)
@@ -121,15 +158,32 @@ export default function ParentResultsPage() {
       }
     } catch (error) {
       console.error("Error fetching terms:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load terms data. Please try again.",
+        variant: "destructive",
+      })
     }
   }
 
   const fetchSubjects = async () => {
     try {
-      const child = children.find((c) => c.id === selectedChild)
-      if (!child) return
+      const token = localStorage.getItem("token")
 
-      const response = await fetch(`/api/subjects?sclassId=${child.sclassName.id}`)
+      if (!token) {
+        return
+      }
+
+      const child = children.find((c) => c.id === selectedChild)
+      if (!child || !child.sclassName?.id) return
+
+      const response = await fetch(`/api/subjects?sclassId=${child.sclassName?.id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      })
+
       if (!response.ok) throw new Error("Failed to fetch subjects")
 
       const data = await response.json()
@@ -142,6 +196,17 @@ export default function ParentResultsPage() {
   const fetchResults = async () => {
     try {
       setLoading(true)
+      const token = localStorage.getItem("token")
+
+      if (!token) {
+        toast({
+          title: "Authentication Error",
+          description: "Please log in again.",
+          variant: "destructive",
+        })
+        return
+      }
+
       let url = `/api/exams/results?studentId=${selectedChild}`
 
       if (selectedTerm) {
@@ -152,7 +217,13 @@ export default function ParentResultsPage() {
         url += `&examType=${selectedExamType}`
       }
 
-      const response = await fetch(url)
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      })
+
       if (!response.ok) throw new Error("Failed to fetch results")
 
       const data = await response.json()
@@ -393,7 +464,7 @@ export default function ParentResultsPage() {
                 <SelectContent>
                   {children.map((child) => (
                     <SelectItem key={child.id} value={child.id}>
-                      {child.name} ({child.sclassName.sclassName})
+                      {child.name} ({child.sclassName?.sclassName || "No Class"})
                     </SelectItem>
                   ))}
                 </SelectContent>

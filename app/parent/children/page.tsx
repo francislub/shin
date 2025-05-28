@@ -35,54 +35,121 @@ export default function ParentChildrenPage() {
         const token = localStorage.getItem("token")
 
         if (!token) {
+          toast({
+            variant: "destructive",
+            title: "Authentication Error",
+            description: "Please log in to view your children",
+          })
           return
         }
 
-        const response = await fetch("/api/parent/children", {
+        // Get current user info to get parent ID
+        const userResponse = await fetch("/api/auth/verify", {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         })
 
-        if (response.ok) {
-          const data = await response.json()
-          setChildren(data)
-          setFilteredChildren(data)
-        } else {
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Failed to fetch children data",
-          })
+        if (!userResponse.ok) {
+          throw new Error("Failed to verify user")
         }
+
+        const userData = await userResponse.json()
+
+        const response = await fetch(`/api/parent/${userData.id}/children`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = await response.json()
+
+        // Fetch additional data for each child (attendance, grades)
+        const enrichedChildren = await Promise.all(
+          data.map(async (child: any) => {
+            try {
+              // Fetch attendance data
+              const attendanceResponse = await fetch(
+                `/api/attendance?studentId=${child.id}&startDate=${new Date(new Date().getFullYear(), 0, 1).toISOString()}&endDate=${new Date().toISOString()}`,
+                {
+                  headers: { Authorization: `Bearer ${token}` },
+                },
+              )
+
+              let attendance = 0
+              if (attendanceResponse.ok) {
+                const attendanceData = await attendanceResponse.json()
+                const totalDays = attendanceData.length
+                const presentDays = attendanceData.filter((record: any) => record.status === "Present").length
+                attendance = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0
+              }
+
+              // Fetch recent exam results to calculate grade
+              const resultsResponse = await fetch(`/api/exams/results?studentId=${child.id}&limit=10`, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+
+              let grade = "N/A"
+              if (resultsResponse.ok) {
+                const results = await resultsResponse.json()
+                if (results.length > 0) {
+                  const avgPercentage =
+                    results.reduce(
+                      (sum: number, result: any) => sum + (result.marksObtained / result.totalMarks) * 100,
+                      0,
+                    ) / results.length
+
+                  if (avgPercentage >= 90) grade = "A+"
+                  else if (avgPercentage >= 80) grade = "A"
+                  else if (avgPercentage >= 70) grade = "B+"
+                  else if (avgPercentage >= 60) grade = "B"
+                  else if (avgPercentage >= 50) grade = "C"
+                  else if (avgPercentage >= 40) grade = "D"
+                  else grade = "F"
+                }
+              }
+
+              return {
+                id: child.id,
+                name: child.name,
+                rollNum: child.rollNum,
+                gender: child.gender || "Not specified",
+                photo: child.photo,
+                class: child.sclass?.sclassName || "Not assigned",
+                section: child.section,
+                attendance,
+                grade,
+              }
+            } catch (error) {
+              console.error(`Error enriching data for child ${child.id}:`, error)
+              return {
+                id: child.id,
+                name: child.name,
+                rollNum: child.rollNum,
+                gender: child.gender || "Not specified",
+                photo: child.photo,
+                class: child.sclass?.sclassName || "Not assigned",
+                section: child.section,
+                attendance: 0,
+                grade: "N/A",
+              }
+            }
+          }),
+        )
+
+        setChildren(enrichedChildren)
+        setFilteredChildren(enrichedChildren)
       } catch (error) {
         console.error("Fetch children error:", error)
-        // Fallback to sample data if API fails
-        const sampleChildren = [
-          {
-            id: "1",
-            name: "John Doe Jr.",
-            rollNum: "STU2023001",
-            gender: "Male",
-            class: "Grade 5",
-            section: "A",
-            attendance: 98,
-            grade: "A",
-          },
-          {
-            id: "2",
-            name: "Jane Doe",
-            rollNum: "STU2023002",
-            gender: "Female",
-            class: "Grade 3",
-            section: "B",
-            attendance: 92,
-            grade: "B+",
-          },
-        ]
-
-        setChildren(sampleChildren)
-        setFilteredChildren(sampleChildren)
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load children data. Please try again.",
+        })
       } finally {
         setIsLoading(false)
       }

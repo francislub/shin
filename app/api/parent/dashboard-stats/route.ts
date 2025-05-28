@@ -1,46 +1,73 @@
 import { type NextRequest, NextResponse } from "next/server"
-import prisma from "@/lib/prisma"
-import { verifyJWT } from "@/lib/auth"
+import { PrismaClient } from "@prisma/client"
+import jwt from "jsonwebtoken"
 
-export async function GET(req: NextRequest) {
+const prisma = new PrismaClient()
+
+export async function GET(request: NextRequest) {
   try {
-    // Get token from header
-    const token = req.headers.get("authorization")?.split(" ")[1]
+    const token = request.headers.get("authorization")?.replace("Bearer ", "")
 
     if (!token) {
-      return NextResponse.json({ error: "Unauthorized: No token provided" }, { status: 401 })
+      return NextResponse.json({ error: "No token provided" }, { status: 401 })
     }
 
-    // Verify token
-    const decoded = await verifyJWT(token)
-
-    if (!decoded || decoded.role !== "Parent") {
-      return NextResponse.json({ error: "Unauthorized: Invalid token or not a parent" }, { status: 401 })
-    }
-
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any
     const parentId = decoded.id
 
-    // Get parent's children
+    if (decoded.role !== "Parent") {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 })
+    }
+
+    // Get children count
+    const childrenCount = await prisma.student.count({
+      where: {
+        parentId: parentId,
+      },
+    })
+
+    // Get children with their classes to calculate total subjects
     const children = await prisma.student.findMany({
       where: {
         parentId: parentId,
       },
-    })
-
-    // Get pending payments
-    const pendingPayments = await prisma.payment.count({
-      where: {
-        parentId: parentId,
-        status: "pending",
+      include: {
+        sclass: {
+          include: {
+            subjects: true,
+          },
+        },
       },
     })
 
-    // Get upcoming events
-    const upcomingEvents = await prisma.event.count({
+    // Calculate unique subjects across all children
+    const uniqueSubjects = new Set()
+    children.forEach((child) => {
+      child.sclass?.subjects?.forEach((subject) => {
+        uniqueSubjects.add(subject.id)
+      })
+    })
+    const totalSubjects = uniqueSubjects.size
+
+    // Get pending payments for this parent's children
+    const pendingPayments = await prisma.payment.count({
+      where: {
+        student: {
+          parentId: parentId,
+        },
+        status: "Pending",
+      },
+    })
+
+    // Get upcoming events (next 30 days)
+    const thirtyDaysFromNow = new Date()
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
+
+    const upcomingEvents = await prisma.notice.count({
       where: {
         date: {
           gte: new Date(),
-          lte: new Date(new Date().setDate(new Date().getDate() + 30)), // Next 30 days
+          lte: thirtyDaysFromNow,
         },
       },
     })
@@ -48,21 +75,21 @@ export async function GET(req: NextRequest) {
     // Get unread notices
     const unreadNotices = await prisma.notice.count({
       where: {
-        createdAt: {
-          gte: new Date(new Date().setDate(new Date().getDate() - 30)), // Last 30 days
+        date: {
+          gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
         },
-        // Add logic for unread notices if you have that feature
       },
     })
 
     return NextResponse.json({
-      childrenCount: children.length,
+      childrenCount,
+      totalSubjects,
       pendingPayments,
       upcomingEvents,
       unreadNotices,
     })
   } catch (error) {
-    console.error("Dashboard stats error:", error)
+    console.error("Error fetching dashboard stats:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
