@@ -26,11 +26,6 @@ interface ReportCardProps {
       id: string
       name: string
       fullMarks: number
-      botTerm?: {
-        marks: number
-        grade: string
-        percentage: number
-      }
       midTerm: {
         marks: number
         grade: string
@@ -45,20 +40,17 @@ interface ReportCardProps {
       teacherInitials: string
     }[]
     performance: {
-      botTerm?: {
-        total: number
-        average: number
-        grade: string
-      }
       midTerm: {
         total: number
         average: number
         grade: string
+        division: string
       }
       endTerm: {
         total: number
         average: number
         grade: string
+        division: string
       }
     }
     conduct: {
@@ -82,7 +74,7 @@ interface ReportCardProps {
   }
 }
 
-export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
+export const StudentReportCardMidEnd: React.FC<ReportCardProps> = ({ data }) => {
   const formatDate = (dateString: string) => {
     if (!dateString) return "N/A"
     const date = new Date(dateString)
@@ -93,12 +85,24 @@ export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
     })
   }
 
-  // Use only the grading scale from the database - no fallback
+  // Calculate division based on grade number
+  const calculateDivision = (gradeStr: string) => {
+    // Extract number from grade (e.g., "A+" -> get position in grading scale)
+    const grade = data.gradingScale.find((g) => g.grade === gradeStr)
+    if (!grade) return "X"
+
+    const gradeNumber = data.gradingScale.length - data.gradingScale.findIndex((g) => g.grade === gradeStr)
+
+    if (gradeNumber >= 4 && gradeNumber <= 12) return "I"
+    if (gradeNumber >= 13 && gradeNumber <= 24) return "II"
+    if (gradeNumber >= 25 && gradeNumber <= 28) return "III"
+    if (gradeNumber >= 29 && gradeNumber <= 32) return "IV"
+    if (gradeNumber >= 33 && gradeNumber <= 36) return "U"
+    return "X"
+  }
+
   const gradingScale = data.gradingScale || []
   const subjects = data.subjects || []
-
-  // Check if BOT exam results exist
-  const hasBotResults = subjects.some((subject) => subject.botTerm && subject.botTerm.marks > 0)
 
   return (
     <div className="max-h-[80vh] overflow-y-auto">
@@ -127,7 +131,9 @@ export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
           <p className="mt-2 font-semibold">"A Centre for Guaranteed excellence"</p>
           <div className="h-1 bg-black my-2"></div>
           <div className="border-2 border-black inline-block px-8 py-1 bg-sky-200">
-            <h2 className="text-xl font-bold uppercase">END OF {data.term?.name || "TERM"} ASSESSMENT REPORT</h2>
+            <h2 className="text-xl font-bold uppercase">
+              MID & END TERM {data.term?.name || "TERM"} ASSESSMENT REPORT
+            </h2>
           </div>
         </div>
 
@@ -149,7 +155,7 @@ export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
                 <p className="font-bold mr-2">LIN NO:</p>
                 <p className="uppercase underline flex-1">{data.student?.rollNum || "N/A"}</p>
                 <p className="font-bold mr-2">DIV:</p>
-                <p className="uppercase underline w-16">{data.performance?.endTerm?.grade || "N/A"}</p>
+                <p className="uppercase underline w-16">{data.performance?.endTerm?.division || "N/A"}</p>
               </div>
             </div>
             <div className="col-span-3 flex justify-center">
@@ -178,13 +184,6 @@ export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
               <tr>
                 <th className="border-2 border-black p-2 text-left">SUBJECT</th>
                 <th className="border-2 border-black p-2 text-center">FULL MARKS</th>
-                {hasBotResults && (
-                  <>
-                    <th colSpan={3} className="border-2 border-black p-2 text-center">
-                      BOT {data.term?.name || "TERM"} EXAMS
-                    </th>
-                  </>
-                )}
                 <th colSpan={3} className="border-2 border-black p-2 text-center">
                   MID TERM {data.term?.name || "TERM"} EXAMS
                 </th>
@@ -197,54 +196,40 @@ export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
               <tr>
                 <th className="border-2 border-black p-2"></th>
                 <th className="border-2 border-black p-2"></th>
-                {hasBotResults && (
-                  <>
-                    <th className="border-2 border-black p-2 text-center">MARKS</th>
-                    <th className="border-2 border-black p-2 text-center">%</th>
-                    <th className="border-2 border-black p-2 text-center">GRADE</th>
-                  </>
-                )}
                 <th className="border-2 border-black p-2 text-center">MARKS</th>
-                <th className="border-2 border-black p-2 text-center">%</th>
-                <th className="border-2 border-black p-2 text-center">GRADE</th>
+                <th className="border-2 border-black p-2 text-center">AGG</th>
+                <th className="border-2 border-black p-2 text-center">DIV</th>
                 <th className="border-2 border-black p-2 text-center">MARKS</th>
-                <th className="border-2 border-black p-2 text-center">%</th>
-                <th className="border-2 border-black p-2 text-center">GRADE</th>
+                <th className="border-2 border-black p-2 text-center">AGG</th>
+                <th className="border-2 border-black p-2 text-center">DIV</th>
                 <th className="border-2 border-black p-2"></th>
                 <th className="border-2 border-black p-2"></th>
               </tr>
             </thead>
             <tbody>
               {subjects.length > 0 ? (
-                subjects.map((subject) => (
+                subjects.map((subject, index) => (
                   <tr key={subject.id}>
                     <td className="border-2 border-black p-2">{subject.name?.toUpperCase() || "N/A"}</td>
                     <td className="border-2 border-black p-2 text-center">{subject.fullMarks || 100}</td>
-                    {hasBotResults && (
-                      <>
-                        <td className="border-2 border-black p-2 text-center text-blue-600 font-bold">
-                          {subject.botTerm?.marks || 0}
-                        </td>
-                        <td className="border-2 border-black p-2 text-center text-green-600 font-bold">
-                          {subject.botTerm?.percentage || 0}%
-                        </td>
-                        <td className="border-2 border-black p-2 text-center">{subject.botTerm?.grade || "N/A"}</td>
-                      </>
-                    )}
                     <td className="border-2 border-black p-2 text-center text-blue-600 font-bold">
                       {subject.midTerm?.marks || 0}
                     </td>
-                    <td className="border-2 border-black p-2 text-center text-green-600 font-bold">
-                      {subject.midTerm?.percentage || 0}%
+                    <td className="border-2 border-black p-2 text-center text-red-600 font-bold">
+                      {subjects.filter((s) => (s.midTerm?.marks || 0) > (subject.midTerm?.marks || 0)).length + 1}
                     </td>
-                    <td className="border-2 border-black p-2 text-center">{subject.midTerm?.grade || "N/A"}</td>
+                    <td className="border-2 border-black p-2 text-center">
+                      {calculateDivision(subject.midTerm?.grade || "F")}
+                    </td>
                     <td className="border-2 border-black p-2 text-center text-blue-600 font-bold">
                       {subject.endTerm?.marks || 0}
                     </td>
-                    <td className="border-2 border-black p-2 text-center text-green-600 font-bold">
-                      {subject.endTerm?.percentage || 0}%
+                    <td className="border-2 border-black p-2 text-center text-red-600 font-bold">
+                      {subjects.filter((s) => (s.endTerm?.marks || 0) > (subject.endTerm?.marks || 0)).length + 1}
                     </td>
-                    <td className="border-2 border-black p-2 text-center">{subject.endTerm?.grade || "N/A"}</td>
+                    <td className="border-2 border-black p-2 text-center">
+                      {calculateDivision(subject.endTerm?.grade || "F")}
+                    </td>
                     <td className="border-2 border-black p-2 text-center text-blue-600">
                       {subject.teacherComment || "Good"}
                     </td>
@@ -255,7 +240,7 @@ export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={hasBotResults ? 12 : 9} className="border-2 border-black p-4 text-center text-gray-500">
+                  <td colSpan={10} className="border-2 border-black p-4 text-center text-gray-500">
                     No subjects data available
                   </td>
                 </tr>
@@ -263,36 +248,33 @@ export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
               <tr>
                 <td className="border-2 border-black p-2 font-bold">TOTAL MARKS</td>
                 <td className="border-2 border-black p-2 text-center font-bold">{subjects.length * 100}</td>
-                {hasBotResults && (
-                  <>
-                    <td className="border-2 border-black p-2 text-center font-bold">
-                      {data.performance?.botTerm?.total || 0}
-                    </td>
-                    <td className="border-2 border-black p-2 text-center font-bold">
-                      {data.performance?.botTerm?.average || 0}%
-                    </td>
-                    <td className="border-2 border-black p-2 text-center font-bold">
-                      {data.performance?.botTerm?.grade || "N/A"}
-                    </td>
-                  </>
-                )}
                 <td className="border-2 border-black p-2 text-center font-bold">
                   {data.performance?.midTerm?.total || 0}
                 </td>
-                <td className="border-2 border-black p-2 text-center font-bold">
-                  {data.performance?.midTerm?.average || 0}%
+                <td className="border-2 border-black p-2 text-center text-red-600 font-bold">
+                  {subjects.reduce(
+                    (sum, subject) =>
+                      sum +
+                      (subjects.filter((s) => (s.midTerm?.marks || 0) > (subject.midTerm?.marks || 0)).length + 1),
+                    0,
+                  )}
                 </td>
                 <td className="border-2 border-black p-2 text-center font-bold">
-                  {data.performance?.midTerm?.grade || "N/A"}
+                  {data.performance?.midTerm?.division || "N/A"}
                 </td>
                 <td className="border-2 border-black p-2 text-center font-bold">
                   {data.performance?.endTerm?.total || 0}
                 </td>
-                <td className="border-2 border-black p-2 text-center font-bold">
-                  {data.performance?.endTerm?.average || 0}%
+                <td className="border-2 border-black p-2 text-center text-red-600 font-bold">
+                  {subjects.reduce(
+                    (sum, subject) =>
+                      sum +
+                      (subjects.filter((s) => (s.endTerm?.marks || 0) > (subject.endTerm?.marks || 0)).length + 1),
+                    0,
+                  )}
                 </td>
                 <td className="border-2 border-black p-2 text-center font-bold">
-                  {data.performance?.endTerm?.grade || "N/A"}
+                  {data.performance?.endTerm?.division || "N/A"}
                 </td>
                 <td className="border-2 border-black p-2"></td>
                 <td className="border-2 border-black p-2"></td>
@@ -351,7 +333,7 @@ export const StudentReportCard: React.FC<ReportCardProps> = ({ data }) => {
           </div>
         </div>
 
-        {/* Grading Scale - Only show if data exists in database */}
+        {/* Grading Scale */}
         {gradingScale.length > 0 && (
           <div className="mt-4">
             <h3 className="text-center text-xl font-bold uppercase underline">GRADING SCALE</h3>

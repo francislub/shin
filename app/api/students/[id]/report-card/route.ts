@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma"
 import { verifyToken } from "@/lib/auth"
 
 // Get report card for a specific student
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const token = req.headers.get("authorization")?.split(" ")[1]
 
@@ -17,8 +17,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    const studentId = params.id
+    // Await params before accessing properties
+    const { id: studentId } = await params
     const termId = req.nextUrl.searchParams.get("termId")
+    const reportType = req.nextUrl.searchParams.get("type") || "mid-end" // Default to mid-end
 
     if (!termId) {
       return NextResponse.json({ error: "Term ID is required" }, { status: 400 })
@@ -54,24 +56,34 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       },
     })
 
-    // Get exam results for the student
-    const examResults = {
-      botExam: student.botExamResult || [],
-      midExam: student.midExamResult || [],
-      endExam: student.endExamResult || [],
-    }
-
-    // Get attendance records
-    const attendance = student.attendance || []
+    // Get all exam results for the student in this term
+    const examResults = await prisma.examResult.findMany({
+      where: {
+        studentId: studentId,
+        exam: {
+          termId: termId,
+        },
+      },
+      include: {
+        exam: {
+          include: {
+            subject: true,
+          },
+        },
+        subject: true,
+      },
+    })
 
     // Get class teacher comments
     const classTeacherComments = await prisma.classTeacherComment.findMany({
       where: { schoolId: student.schoolId },
+      orderBy: { from: "desc" },
     })
 
     // Get head teacher comments
     const headTeacherComments = await prisma.headTeacherComment.findMany({
       where: { schoolId: student.schoolId },
+      orderBy: { from: "desc" },
     })
 
     // Get grading scale
@@ -80,66 +92,183 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       orderBy: { from: "desc" },
     })
 
-    // Calculate total marks and averages
-    const calculateTotalAndAverage = (examResults: any[]) => {
-      if (!examResults || examResults.length === 0) return { total: 0, average: 0 }
-
-      const total = examResults.reduce((sum, result) => sum + result.marksObtained, 0)
-      const average = Math.round(total / examResults.length)
-
-      return { total, average }
+    // Helper function to get grade based on marks
+    const getGrade = (marks: number) => {
+      const grade = gradingScale.find((g) => marks >= g.from && marks <= g.to)
+      return grade ? grade.grade : "F"
     }
 
-    const midTermStats = calculateTotalAndAverage(examResults.midExam)
-    const endTermStats = calculateTotalAndAverage(examResults.endExam)
+    // Helper function to calculate division based on grade
+    const calculateDivision = (gradeStr: string) => {
+      const grade = gradingScale.find((g) => g.grade === gradeStr)
+      if (!grade) return "X"
 
-    // Determine appropriate comments based on average score
+      const gradeNumber = gradingScale.length - gradingScale.findIndex((g) => g.grade === gradeStr)
+
+      if (gradeNumber >= 4 && gradeNumber <= 12) return "I"
+      if (gradeNumber >= 13 && gradeNumber <= 24) return "II"
+      if (gradeNumber >= 25 && gradeNumber <= 28) return "III"
+      if (gradeNumber >= 29 && gradeNumber <= 32) return "IV"
+      if (gradeNumber >= 33 && gradeNumber <= 36) return "U"
+      return "X"
+    }
+
+    // Helper function to get comment based on average
     const getComment = (comments: any[], average: number) => {
       return (
         comments.find((comment) => average >= comment.from && average <= comment.to)?.comment || "No comment available"
       )
     }
 
-    const classTeacherComment = getComment(classTeacherComments, endTermStats.average)
-    const headTeacherComment = getComment(headTeacherComments, endTermStats.average)
+    // Group exam results by subject and exam type
+    const resultsBySubject = new Map()
 
-    // Format subject results with grades
-    const getGrade = (marks: number) => {
-      const grade = gradingScale.find((g) => marks >= g.from && marks <= g.to)
-      return grade ? grade.grade : "N/A"
-    }
+    examResults.forEach((result) => {
+      const subjectId = result.subjectId
+      const examType = result.exam.examType
 
+      if (!resultsBySubject.has(subjectId)) {
+        resultsBySubject.set(subjectId, {
+          subject: result.subject,
+          BOT: null,
+          MID: null,
+          END: null,
+        })
+      }
+
+      const subjectResults = resultsBySubject.get(subjectId)
+      subjectResults[examType] = {
+        marks: result.marksObtained,
+        totalMarks: result.exam.totalMarks,
+        grade: result.grade || getGrade((result.marksObtained / result.exam.totalMarks) * 100),
+        remarks: result.remarks,
+      }
+    })
+
+    // Format subject results based on report type
     const formattedSubjects = subjects.map((subject) => {
-      const midTermResult = examResults.midExam.find((r) => r.subName === subject.id)
-      const endTermResult = examResults.endExam.find((r) => r.subName === subject.id)
+      const subjectResults = resultsBySubject.get(subject.id) || {
+        BOT: null,
+        MID: null,
+        END: null,
+      }
 
-      return {
+      const botMarks = subjectResults.BOT?.marks || 0
+      const midMarks = subjectResults.MID?.marks || 0
+      const endMarks = subjectResults.END?.marks || 0
+
+      const botPercentage = subjectResults.BOT ? (botMarks / subjectResults.BOT.totalMarks) * 100 : 0
+      const midPercentage = subjectResults.MID ? (midMarks / subjectResults.MID.totalMarks) * 100 : 0
+      const endPercentage = subjectResults.END ? (endMarks / subjectResults.END.totalMarks) * 100 : 0
+
+      // Determine teacher comment based on performance
+      let teacherComment = "Good"
+      if (reportType === "bot-mid") {
+        if (midPercentage > botPercentage && botPercentage > 0) {
+          teacherComment = "Improved"
+        } else if (midPercentage < botPercentage && botPercentage > 0) {
+          teacherComment = "Needs improvement"
+        } else if (midPercentage === botPercentage && botPercentage > 0) {
+          teacherComment = "Consistent"
+        }
+      } else {
+        if (endPercentage > midPercentage && midPercentage > 0) {
+          teacherComment = "Improved"
+        } else if (endPercentage < midPercentage && midPercentage > 0) {
+          teacherComment = "Needs improvement"
+        } else if (endPercentage === midPercentage && midPercentage > 0) {
+          teacherComment = "Consistent"
+        }
+      }
+
+      const subjectData: any = {
         id: subject.id,
         name: subject.subName,
         fullMarks: 100,
-        midTerm: {
-          marks: midTermResult?.marksObtained || 0,
-          grade: getGrade(midTermResult?.marksObtained || 0),
-        },
-        endTerm: {
-          marks: endTermResult?.marksObtained || 0,
-          grade: getGrade(endTermResult?.marksObtained || 0),
-        },
-        teacherComment:
-          midTermResult?.marksObtained && endTermResult?.marksObtained
-            ? endTermResult.marksObtained > midTermResult.marksObtained
-              ? "Improved"
-              : endTermResult.marksObtained < midTermResult.marksObtained
-                ? "Needs improvement"
-                : "Consistent"
-            : "No comment",
+        teacherComment,
         teacherInitials:
           subject.teacher?.name
             .split(" ")
             .map((n) => n[0])
             .join(".") || "N/A",
       }
+
+      // Add exam data based on report type
+      if (reportType === "bot-mid") {
+        subjectData.botTerm = {
+          marks: botMarks,
+          grade: getGrade(botPercentage),
+          percentage: Math.round(botPercentage),
+        }
+        subjectData.midTerm = {
+          marks: midMarks,
+          grade: getGrade(midPercentage),
+          percentage: Math.round(midPercentage),
+        }
+      } else {
+        subjectData.midTerm = {
+          marks: midMarks,
+          grade: getGrade(midPercentage),
+          percentage: Math.round(midPercentage),
+        }
+        subjectData.endTerm = {
+          marks: endMarks,
+          grade: getGrade(endPercentage),
+          percentage: Math.round(endPercentage),
+        }
+      }
+
+      return subjectData
     })
+
+    // Calculate overall performance based on report type
+    const calculateTermStats = (termType: "botTerm" | "midTerm" | "endTerm") => {
+      const validSubjects = formattedSubjects.filter((s) => s[termType] && s[termType].marks > 0)
+      if (validSubjects.length === 0) return { total: 0, average: 0, grade: "N/A", division: "X" }
+
+      const total = validSubjects.reduce((sum, subject) => sum + subject[termType].marks, 0)
+      const average = Math.round(total / validSubjects.length)
+      const grade = getGrade(average)
+      const division = calculateDivision(grade)
+
+      return {
+        total,
+        average,
+        grade,
+        division,
+      }
+    }
+
+    const performance: any = {}
+
+    if (reportType === "bot-mid") {
+      performance.botTerm = calculateTermStats("botTerm")
+      performance.midTerm = calculateTermStats("midTerm")
+    } else {
+      performance.midTerm = calculateTermStats("midTerm")
+      performance.endTerm = calculateTermStats("endTerm")
+    }
+
+    // Get appropriate comments based on final term average
+    const finalAverage = reportType === "bot-mid" ? performance.midTerm.average : performance.endTerm.average
+    const classTeacherComment = getComment(classTeacherComments, finalAverage)
+    const headTeacherComment = getComment(headTeacherComments, finalAverage)
+
+    // Calculate attendance percentage
+    const attendanceRecords = await prisma.attendanceRecord.findMany({
+      where: {
+        studentId: studentId,
+        sclassId: student.sclassId,
+        date: {
+          gte: new Date(term.year + "-01-01"),
+          lte: new Date(term.year + "-12-31"),
+        },
+      },
+    })
+
+    const totalDays = attendanceRecords.length
+    const presentDays = attendanceRecords.filter((record) => record.status === "Present").length
+    const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 100
 
     // Compile report card data
     const reportCard = {
@@ -164,23 +293,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         nextTermEnds: term.nextTermEnds,
       },
       subjects: formattedSubjects,
-      performance: {
-        midTerm: {
-          total: midTermStats.total,
-          average: midTermStats.average,
-          grade: getGrade(midTermStats.average),
-        },
-        endTerm: {
-          total: endTermStats.total,
-          average: endTermStats.average,
-          grade: getGrade(endTermStats.average),
-        },
-      },
+      performance: performance,
       conduct: {
         discipline: student.discipline || "Good",
         timeManagement: student.timeManagement || "Good",
         smartness: student.smartness || "Good",
         attendanceRemarks: student.attendanceRemarks || "Regular",
+        attendancePercentage,
       },
       comments: {
         classTeacher: classTeacherComment,

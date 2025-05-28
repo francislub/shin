@@ -3,8 +3,9 @@ import prisma from "@/lib/prisma"
 import { verifyToken } from "@/lib/auth"
 
 // Get report cards for all students in a class
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const { id: classId } = await params
     const token = req.headers.get("authorization")?.split(" ")[1]
 
     if (!token) {
@@ -12,15 +13,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const decoded = verifyToken(token)
-
     if (!decoded || decoded.role !== "Admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Await params before accessing properties
-    const { id: classId } = await params
     const termId = req.nextUrl.searchParams.get("termId")
-
     if (!termId) {
       return NextResponse.json({ error: "Term ID is required" }, { status: 400 })
     }
@@ -52,6 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       include: {
         sclass: true,
       },
+      orderBy: { rollNum: "asc" },
     })
 
     // Get subjects for the class
@@ -62,7 +60,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
 
-    // Get all exam results for students in this class and term
+    // Get all exam results for the class and term
     const examResults = await prisma.examResult.findMany({
       where: {
         student: {
@@ -83,27 +81,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
 
-    // Get class teacher comments
-    const classTeacherComments = await prisma.classTeacherComment.findMany({
-      where: { schoolId: sclass.schoolId },
-      orderBy: { from: "desc" },
-    })
-
-    // Get head teacher comments
-    const headTeacherComments = await prisma.headTeacherComment.findMany({
-      where: { schoolId: sclass.schoolId },
-      orderBy: { from: "desc" },
-    })
-
-    // Get grading scale
+    // Get grading scale and comments
     const gradingScale = await prisma.grading.findMany({
       where: { schoolId: sclass.schoolId },
       orderBy: { from: "desc" },
     })
 
+    const classTeacherComments = await prisma.classTeacherComment.findMany({
+      where: { schoolId: sclass.schoolId },
+      orderBy: { from: "desc" },
+    })
+
+    const headTeacherComments = await prisma.headTeacherComment.findMany({
+      where: { schoolId: sclass.schoolId },
+      orderBy: { from: "desc" },
+    })
+
     // Helper functions
-    const getGrade = (marks: number) => {
-      const grade = gradingScale.find((g) => marks >= g.from && marks <= g.to)
+    const getGrade = (percentage: number) => {
+      const grade = gradingScale.find((g) => percentage >= g.from && percentage <= g.to)
       return grade ? grade.grade : "F"
     }
 
@@ -119,7 +115,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     examResults.forEach((result) => {
       const studentId = result.studentId
       const subjectId = result.subjectId
-      const examType = result.exam.examType
+      const examType = result.exam.examType.toUpperCase()
 
       if (!resultsByStudent.has(studentId)) {
         resultsByStudent.set(studentId, new Map())
@@ -137,10 +133,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       }
 
       const subjectResults = studentResults.get(subjectId)
+      const percentage = (result.marksObtained / result.exam.totalMarks) * 100
+
       subjectResults[examType] = {
         marks: result.marksObtained,
         totalMarks: result.exam.totalMarks,
-        grade: result.grade || getGrade((result.marksObtained / result.exam.totalMarks) * 100),
+        percentage: Math.round(percentage),
+        grade: result.grade || getGrade(percentage),
         remarks: result.remarks,
       }
     })
@@ -150,7 +149,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       students.map(async (student) => {
         const studentResults = resultsByStudent.get(student.id) || new Map()
 
-        // Format subject results for this student
+        // Format subjects for this student
         const formattedSubjects = subjects.map((subject) => {
           const subjectResults = studentResults.get(subject.id) || {
             BOT: null,
@@ -158,42 +157,42 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             END: null,
           }
 
-          const botMarks = subjectResults.BOT?.marks || 0
-          const midMarks = subjectResults.MID?.marks || 0
-          const endMarks = subjectResults.END?.marks || 0
+          const botData = subjectResults.BOT
+          const midData = subjectResults.MID
+          const endData = subjectResults.END
 
-          const botPercentage = subjectResults.BOT ? (botMarks / subjectResults.BOT.totalMarks) * 100 : 0
-          const midPercentage = subjectResults.MID ? (midMarks / subjectResults.MID.totalMarks) * 100 : 0
-          const endPercentage = subjectResults.END ? (endMarks / subjectResults.END.totalMarks) * 100 : 0
-
-          // Determine teacher comment
+          // Generate teacher comment
           let teacherComment = "Good"
-          if (endPercentage > midPercentage && midPercentage > 0) {
-            teacherComment = "Improved"
-          } else if (endPercentage < midPercentage && midPercentage > 0) {
-            teacherComment = "Needs improvement"
-          } else if (endPercentage === midPercentage && midPercentage > 0) {
-            teacherComment = "Consistent"
+          if (endData && midData) {
+            if (endData.percentage > midData.percentage) {
+              teacherComment = "Improved"
+            } else if (endData.percentage < midData.percentage) {
+              teacherComment = "Needs improvement"
+            } else {
+              teacherComment = "Consistent"
+            }
           }
 
           return {
             id: subject.id,
             name: subject.subName,
             fullMarks: 100,
-            botTerm: {
-              marks: botMarks,
-              grade: getGrade(botPercentage),
-              percentage: Math.round(botPercentage),
-            },
+            botTerm: botData
+              ? {
+                  marks: botData.marks,
+                  grade: botData.grade,
+                  percentage: botData.percentage,
+                }
+              : undefined,
             midTerm: {
-              marks: midMarks,
-              grade: getGrade(midPercentage),
-              percentage: Math.round(midPercentage),
+              marks: midData?.marks || 0,
+              grade: midData?.grade || "N/A",
+              percentage: midData?.percentage || 0,
             },
             endTerm: {
-              marks: endMarks,
-              grade: getGrade(endPercentage),
-              percentage: Math.round(endPercentage),
+              marks: endData?.marks || 0,
+              grade: endData?.grade || "N/A",
+              percentage: endData?.percentage || 0,
             },
             teacherComment,
             teacherInitials:
@@ -206,10 +205,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
         // Calculate performance stats
         const calculateTermStats = (termType: "botTerm" | "midTerm" | "endTerm") => {
-          const validSubjects = formattedSubjects.filter((s) => s[termType].marks > 0)
+          const validSubjects = formattedSubjects.filter((s) => {
+            if (termType === "botTerm") {
+              return s.botTerm && s.botTerm.marks > 0
+            }
+            return s[termType].marks > 0
+          })
+
           if (validSubjects.length === 0) return { total: 0, average: 0, grade: "N/A" }
 
-          const total = validSubjects.reduce((sum, subject) => sum + subject[termType].marks, 0)
+          const total = validSubjects.reduce((sum, subject) => {
+            if (termType === "botTerm") {
+              return sum + (subject.botTerm?.marks || 0)
+            }
+            return sum + subject[termType].marks
+          }, 0)
+
           const average = Math.round(total / validSubjects.length)
 
           return {
@@ -265,7 +276,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           },
           subjects: formattedSubjects,
           performance: {
-            botTerm: botTermStats,
+            botTerm: botTermStats.total > 0 ? botTermStats : undefined,
             midTerm: midTermStats,
             endTerm: endTermStats,
           },

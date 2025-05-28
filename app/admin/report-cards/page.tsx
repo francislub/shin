@@ -9,10 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Download, Eye, Printer } from "lucide-react"
+import { Download, Eye, Printer, Loader2 } from "lucide-react"
 import { useAuth } from "@/context/auth-context"
-import { StudentReportCard } from "@/components/admin/student-report-card"
+import { StudentReportCardBotMid } from "@/components/admin/student-report-card-bot-mid"
+import { StudentReportCardMidEnd } from "@/components/admin/student-report-card-mid-end"
 import { useReactToPrint } from "react-to-print"
+import html2canvas from "html2canvas"
+import jsPDF from "jspdf"
 
 interface Class {
   id: string
@@ -58,38 +61,14 @@ interface ReportCardData {
     nextTermStarts: string
     nextTermEnds: string
   }
-  subjects: {
-    id: string
-    name: string
-    fullMarks: number
-    midTerm: {
-      marks: number
-      grade: string
-    }
-    endTerm: {
-      marks: number
-      grade: string
-    }
-    teacherComment: string
-    teacherInitials: string
-  }[]
-  performance: {
-    midTerm: {
-      total: number
-      average: number
-      grade: string
-    }
-    endTerm: {
-      total: number
-      average: number
-      grade: string
-    }
-  }
+  subjects: any[]
+  performance: any
   conduct: {
     discipline: string
     timeManagement: string
     smartness: string
     attendanceRemarks: string
+    attendancePercentage?: number
   }
   comments: {
     classTeacher: string
@@ -112,17 +91,26 @@ export default function AdminReportCards() {
   const [selectedTerm, setSelectedTerm] = useState<string>("")
   const [selectedStudent, setSelectedStudent] = useState<string>("")
   const [reportCardData, setReportCardData] = useState<ReportCardData | null>(null)
-  const [classReportCards, setClassReportCards] = useState<ReportCardData[]>([])
+  const [reportType, setReportType] = useState<"bot-mid" | "mid-end">("bot-mid")
   const [isLoading, setIsLoading] = useState(true)
+  const [isDownloading, setIsDownloading] = useState(false)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
-  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("individual")
 
   const reportCardRef = useRef<HTMLDivElement>(null)
-  const allReportCardsRef = useRef<HTMLDivElement>(null)
 
   const { toast } = useToast()
   const { user } = useAuth()
+
+  const getSelectedClassName = () => {
+    const selectedClassObj = classes.find((cls) => cls.id === selectedClass)
+    return selectedClassObj ? selectedClassObj.sclassName : ""
+  }
+
+  const getSelectedTermName = () => {
+    const selectedTermObj = terms.find((term) => term.id === selectedTerm)
+    return selectedTermObj ? `${selectedTermObj.termName} ${selectedTermObj.year}` : ""
+  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -193,8 +181,6 @@ export default function AdminReportCards() {
         if (response.ok) {
           const data = await response.json()
           setStudents(data)
-
-          // Reset selected student
           setSelectedStudent("")
         } else {
           toast({
@@ -237,11 +223,14 @@ export default function AdminReportCards() {
 
       setIsLoading(true)
 
-      const response = await fetch(`/api/students/${selectedStudent}/report-card?termId=${selectedTerm}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
+      const response = await fetch(
+        `/api/students/${selectedStudent}/report-card?termId=${selectedTerm}&type=${reportType}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         },
-      })
+      )
 
       if (response.ok) {
         const data = await response.json()
@@ -266,84 +255,64 @@ export default function AdminReportCards() {
     }
   }
 
-  const fetchClassReportCards = async () => {
-    if (!selectedClass || !selectedTerm) {
+  // Print report card
+  const handlePrintReportCard = useReactToPrint({
+    content: () => reportCardRef.current,
+    documentTitle: `Report_Card_${reportType}_${reportCardData?.student?.name || "Student"}_${reportCardData?.term?.name || "Term"}_${
+      reportCardData?.term?.year || new Date().getFullYear()
+    }`,
+    onAfterPrint: () => {
+      toast({
+        title: "Success",
+        description: "Report card printed successfully",
+      })
+    },
+  })
+
+  // Download report card as PDF
+  const handleDownloadReportCard = async () => {
+    if (!reportCardRef.current) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Please select a class and term",
+        description: "Report card not available for download",
       })
       return
     }
 
     try {
-      const token = localStorage.getItem("token")
+      setIsDownloading(true)
 
-      if (!token) {
-        return
-      }
-
-      setIsLoading(true)
-
-      const response = await fetch(`/api/classes/${selectedClass}/report-cards?termId=${selectedTerm}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      const element = reportCardRef.current
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        logging: false,
+        useCORS: true,
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        setClassReportCards(data.reportCards)
-        setIsPrintDialogOpen(true)
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to fetch class report cards",
-        })
-      }
+      const imgData = canvas.toDataURL("image/png")
+      const pdf = new jsPDF("p", "mm", "a4")
+      const imgProps = pdf.getImageProperties(imgData)
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
+
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight)
+      pdf.save(`Report_Card_${reportType}_${reportCardData?.student?.name || "Student"}.pdf`)
+
+      toast({
+        title: "Success",
+        description: "Report card downloaded successfully",
+      })
     } catch (error) {
-      console.error("Fetch class report cards error:", error)
+      console.error("Download error:", error)
       toast({
         variant: "destructive",
         title: "Error",
-        description: "An error occurred while fetching class report cards",
+        description: "Failed to download report card",
       })
     } finally {
-      setIsLoading(false)
+      setIsDownloading(false)
     }
-  }
-
-  const handlePrintReportCard = useReactToPrint({
-    content: () => reportCardRef.current,
-    documentTitle: `Report_Card_${reportCardData?.student.name}_${reportCardData?.term.name}_${reportCardData?.term.year}`,
-  })
-
-  const handlePrintAllReportCards = useReactToPrint({
-    content: () => allReportCardsRef.current,
-    documentTitle: `Class_Report_Cards_${selectedClass}_${selectedTerm}`,
-  })
-
-  const handleDownloadReportCard = () => {
-    // In a real implementation, you would generate a PDF and download it
-    // For now, we'll just use the print functionality
-    handlePrintReportCard()
-  }
-
-  const handleDownloadAllReportCards = () => {
-    // In a real implementation, you would generate a PDF and download it
-    // For now, we'll just use the print functionality
-    handlePrintAllReportCards()
-  }
-
-  const getSelectedClassName = () => {
-    const selectedClassObj = classes.find((cls) => cls.id === selectedClass)
-    return selectedClassObj ? selectedClassObj.sclassName : ""
-  }
-
-  const getSelectedTermName = () => {
-    const selectedTermObj = terms.find((term) => term.id === selectedTerm)
-    return selectedTermObj ? `${selectedTermObj.termName} ${selectedTermObj.year}` : ""
   }
 
   return (
@@ -351,17 +320,18 @@ export default function AdminReportCards() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="individual">Individual Report Cards</TabsTrigger>
-          <TabsTrigger value="class">Class Report Cards</TabsTrigger>
         </TabsList>
 
         <TabsContent value="individual">
           <Card>
             <CardHeader>
               <CardTitle>Generate Individual Report Card</CardTitle>
-              <CardDescription>Select a class, term, and student to generate a report card.</CardDescription>
+              <CardDescription>
+                Select a class, term, student, and report type to generate a report card.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-6 md:grid-cols-3">
+              <div className="grid gap-6 md:grid-cols-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Class</label>
                   <Select value={selectedClass} onValueChange={setSelectedClass}>
@@ -409,6 +379,19 @@ export default function AdminReportCards() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Report Type</label>
+                  <Select value={reportType} onValueChange={(value: "bot-mid" | "mid-end") => setReportType(value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select report type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bot-mid">BOT & MID Term</SelectItem>
+                      <SelectItem value="mid-end">MID & END Term</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <Button
@@ -416,7 +399,14 @@ export default function AdminReportCards() {
                 onClick={fetchReportCard}
                 disabled={!selectedClass || !selectedTerm || !selectedStudent || isLoading}
               >
-                {isLoading ? "Loading..." : "Generate Report Card"}
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  "Generate Report Card"
+                )}
               </Button>
             </CardContent>
           </Card>
@@ -442,130 +432,32 @@ export default function AdminReportCards() {
                         <TableRow key={student.id}>
                           <TableCell className="font-medium">{student.name}</TableCell>
                           <TableCell>{student.rollNum}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right space-x-2">
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => {
                                 setSelectedStudent(student.id)
+                                setReportType("bot-mid")
                                 fetchReportCard()
                               }}
                               disabled={!selectedTerm || isLoading}
                             >
                               <Eye className="mr-2 h-4 w-4" />
-                              View Report Card
+                              BOT-MID
                             </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="class">
-          <Card>
-            <CardHeader>
-              <CardTitle>Generate Class Report Cards</CardTitle>
-              <CardDescription>
-                Select a class and term to generate report cards for all students in the class.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Class</label>
-                  <Select value={selectedClass} onValueChange={setSelectedClass}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select class" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {classes.map((cls) => (
-                        <SelectItem key={cls.id} value={cls.id}>
-                          {cls.sclassName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Term</label>
-                  <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select term" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {terms.map((term) => (
-                        <SelectItem key={term.id} value={term.id}>
-                          {term.termName} {term.year}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <Button
-                className="mt-6"
-                onClick={fetchClassReportCards}
-                disabled={!selectedClass || !selectedTerm || isLoading}
-              >
-                {isLoading ? "Loading..." : "Generate Class Report Cards"}
-              </Button>
-            </CardContent>
-          </Card>
-
-          {students.length > 0 && (
-            <Card className="mt-6">
-              <CardHeader>
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <CardTitle>
-                      {getSelectedClassName()} - {getSelectedTermName()}
-                    </CardTitle>
-                    <CardDescription>{students.length} students in this class</CardDescription>
-                  </div>
-                  <Button
-                    className="mt-4 md:mt-0"
-                    onClick={fetchClassReportCards}
-                    disabled={!selectedTerm || isLoading}
-                  >
-                    <Printer className="mr-2 h-4 w-4" />
-                    Print All Report Cards
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Roll Number</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {students.map((student) => (
-                        <TableRow key={student.id}>
-                          <TableCell className="font-medium">{student.name}</TableCell>
-                          <TableCell>{student.rollNum}</TableCell>
-                          <TableCell className="text-right">
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => {
                                 setSelectedStudent(student.id)
+                                setReportType("mid-end")
                                 fetchReportCard()
                               }}
                               disabled={!selectedTerm || isLoading}
                             >
                               <Eye className="mr-2 h-4 w-4" />
-                              View Report Card
+                              MID-END
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -584,11 +476,20 @@ export default function AdminReportCards() {
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
-              <span>Student Report Card</span>
+              <span>Student Report Card ({reportType.toUpperCase()})</span>
               <div className="flex space-x-2">
-                <Button variant="outline" size="sm" onClick={handleDownloadReportCard}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download
+                <Button variant="outline" size="sm" onClick={handleDownloadReportCard} disabled={isDownloading}>
+                  {isDownloading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Downloading...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Download
+                    </>
+                  )}
                 </Button>
                 <Button size="sm" onClick={handlePrintReportCard}>
                   <Printer className="mr-2 h-4 w-4" />
@@ -597,42 +498,16 @@ export default function AdminReportCards() {
               </div>
             </DialogTitle>
           </DialogHeader>
-          <div className="mt-4">
+          <div className="mt-4 max-h-[70vh] overflow-y-auto">
             {reportCardData && (
               <div ref={reportCardRef}>
-                <StudentReportCard data={reportCardData} />
+                {reportType === "bot-mid" ? (
+                  <StudentReportCardBotMid data={reportCardData} />
+                ) : (
+                  <StudentReportCardMidEnd data={reportCardData} />
+                )}
               </div>
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Print All Report Cards Dialog */}
-      <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>Class Report Cards</span>
-              <div className="flex space-x-2">
-                <Button variant="outline" size="sm" onClick={handleDownloadAllReportCards}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download All
-                </Button>
-                <Button size="sm" onClick={handlePrintAllReportCards}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  Print All
-                </Button>
-              </div>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="mt-4 max-h-[70vh] overflow-y-auto">
-            <div ref={allReportCardsRef}>
-              {classReportCards.map((reportCard, index) => (
-                <div key={reportCard.student.id} className={index > 0 ? "mt-8 pt-8 border-t" : ""}>
-                  <StudentReportCard data={reportCard} />
-                </div>
-              ))}
-            </div>
           </div>
         </DialogContent>
       </Dialog>
