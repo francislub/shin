@@ -5,7 +5,9 @@ import { verifyToken } from "@/lib/auth"
 // Get students for a specific teacher's class
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    // Await params to fix Next.js 15+ requirement
     const { id } = await params
+
     const token = req.headers.get("authorization")?.split(" ")[1]
 
     if (!token) {
@@ -55,7 +57,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             phone: true,
           },
         },
-        examResult: {
+        examResults: {
+          // Fixed: Use examResults (plural) instead of examResult
           include: {
             subject: {
               select: {
@@ -75,7 +78,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // Transform the response to include subjects from exam results
     const studentsWithDetails = students.map((student) => {
       // Get unique subjects from exam results
-      const subjects = student.examResult
+      const subjects = student.examResults
         .map((result) => result.subject)
         .filter((subject, index, self) => index === self.findIndex((s) => s.id === subject.id))
 
@@ -83,7 +86,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         id: student.id,
         name: student.name,
         rollNum: student.rollNum,
-        email: student.email,
         gender: student.gender,
         photo: student.photo,
         sclass: student.sclass,
