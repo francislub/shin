@@ -809,7 +809,7 @@ export default function TeacherMarksPage() {
                       <TableHead>Admission No.</TableHead>
                       <TableHead>Marks</TableHead>
                       <TableHead>Grade</TableHead>
-                      <TableHead>Percentage</TableHead>
+                      {/* <TableHead>Percentage</TableHead> */}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -835,9 +835,9 @@ export default function TeacherMarksPage() {
                           <TableCell>
                             <Badge className={`text-white ${getGradeColor(result.grade)}`}>{result.grade}</Badge>
                           </TableCell>
-                          <TableCell>
+                          {/* <TableCell>
                             <span className="text-sm font-medium">{percentage}%</span>
-                          </TableCell>
+                          </TableCell> */}
                         </TableRow>
                       )
                     })}
