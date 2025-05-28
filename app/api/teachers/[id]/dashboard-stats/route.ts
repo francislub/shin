@@ -3,8 +3,16 @@ import prisma from "@/lib/prisma"
 import { verifyToken } from "@/lib/auth"
 
 // Get dashboard statistics for a specific teacher
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params
+
+    // Check if prisma is available
+    if (!prisma) {
+      console.error("Prisma client is not available")
+      return NextResponse.json({ error: "Database connection error" }, { status: 500 })
+    }
+
     const token = req.headers.get("authorization")?.split(" ")[1]
 
     if (!token) {
@@ -17,55 +25,114 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: "Invalid token" }, { status: 401 })
     }
 
-    // Get classes where the teacher is assigned as a subject teacher or class teacher
-    const teacherClasses = await prisma.class.findMany({
+    // Verify teacher exists and get their assignments
+    const teacher = await prisma.teacher.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        teachSclassId: true,
+        teachSubjectId: true,
+        schoolId: true,
+      },
+    })
+
+    if (!teacher) {
+      return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
+    }
+
+    // Initialize default values
+    let teacherClass = null
+    let teacherSubject = null
+    let totalStudents = 0
+    const classesTeaching: any[] = []
+
+    // Get the class where teacher is assigned as class teacher (if any)
+    if (teacher.teachSclassId) {
+      teacherClass = await prisma.sclass.findUnique({
+        where: { id: teacher.teachSclassId },
+        select: {
+          id: true,
+          sclassName: true,
+          _count: {
+            select: {
+              students: true,
+            },
+          },
+        },
+      })
+
+      if (teacherClass) {
+        totalStudents = teacherClass._count.students
+        classesTeaching.push({
+          id: teacherClass.id,
+          name: teacherClass.sclassName,
+          section: "", // No section field in schema
+          studentCount: teacherClass._count.students,
+        })
+      }
+    }
+
+    // Get subject taught by the teacher (if any)
+    if (teacher.teachSubjectId) {
+      teacherSubject = await prisma.subject.findUnique({
+        where: { id: teacher.teachSubjectId },
+        select: {
+          id: true,
+          subName: true,
+          subCode: true,
+          sclassId: true,
+          sclassName: {
+            select: {
+              sclassName: true,
+            },
+          },
+        },
+      })
+    }
+
+    // Get all classes where this teacher teaches subjects (alternative approach)
+    const subjectsTeaching = await prisma.subject.findMany({
       where: {
-        OR: [
-          { classTeacherId: params.id },
-          {
-            subjects: {
-              some: {
-                teacherId: params.id,
+        teacher: {
+          id: id,
+        },
+      },
+      select: {
+        id: true,
+        subName: true,
+        subCode: true,
+        sclassId: true,
+        sclassName: {
+          select: {
+            id: true,
+            sclassName: true,
+            _count: {
+              select: {
+                students: true,
               },
             },
           },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        section: true,
-        _count: {
-          select: {
-            students: true,
-          },
         },
       },
     })
 
-    const classIds = teacherClasses.map((cls) => cls.id)
-
-    // Get subjects taught by the teacher
-    const teacherSubjects = await prisma.subject.findMany({
-      where: {
-        teacherId: params.id,
-      },
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        classId: true,
-      },
+    // Add classes from subjects teaching if not already included
+    subjectsTeaching.forEach((subject) => {
+      if (subject.sclassName && !classesTeaching.find((c) => c.id === subject.sclassName.id)) {
+        classesTeaching.push({
+          id: subject.sclassName.id,
+          name: subject.sclassName.sclassName,
+          section: "",
+          studentCount: subject.sclassName._count.students,
+        })
+        totalStudents += subject.sclassName._count.students
+      }
     })
 
-    // Get total number of students in teacher's classes
-    const totalStudents = await prisma.student.count({
-      where: {
-        classId: {
-          in: classIds,
-        },
-      },
-    })
+    // Get class IDs for queries
+    const classIds = classesTeaching.map((c) => c.id)
 
     // Get upcoming exams for teacher's classes
     const today = new Date()
@@ -74,31 +141,49 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     const upcomingExams = await prisma.exam.findMany({
       where: {
-        classId: {
-          in: classIds,
-        },
-        date: {
-          gte: today,
-          lte: thirtyDaysLater,
-        },
+        AND: [
+          {
+            OR: [{ sclassId: { in: classIds } }, { teacherId: id }],
+          },
+          {
+            startDate: {
+              gte: today,
+              lte: thirtyDaysLater,
+            },
+          },
+        ],
       },
-      select: {
-        id: true,
-        name: true,
-        date: true,
-        examType: true,
+      include: {
+        sclass: {
+          select: {
+            sclassName: true,
+          },
+        },
+        subject: {
+          select: {
+            subName: true,
+            subCode: true,
+          },
+        },
       },
       orderBy: {
-        date: "asc",
+        startDate: "asc",
       },
       take: 5,
     })
 
-    // Get recent attendance records
-    const recentAttendance = await prisma.attendance.groupBy({
-      by: ["date", "classId", "subjectId"],
+    // Get recent attendance records (last 30 days)
+    const thirtyDaysAgo = new Date(today)
+    thirtyDaysAgo.setDate(today.getDate() - 30)
+
+    const recentAttendanceData = await prisma.attendanceRecord.groupBy({
+      by: ["date", "sclassId"],
       where: {
-        teacherId: params.id,
+        teacherId: id,
+        date: {
+          gte: thirtyDaysAgo,
+          lte: today,
+        },
       },
       orderBy: {
         date: "desc",
@@ -106,84 +191,73 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       take: 5,
     })
 
-    // Fetch additional details for attendance records
+    // Fetch detailed attendance information
     const attendanceDetails = await Promise.all(
-      recentAttendance.map(async (record) => {
-        const cls = await prisma.class.findUnique({
-          where: { id: record.classId },
-          select: { name: true },
+      recentAttendanceData.map(async (record) => {
+        const sclass = await prisma.sclass.findUnique({
+          where: { id: record.sclassId },
+          select: { sclassName: true },
         })
 
-        const subject = await prisma.subject.findUnique({
-          where: { id: record.subjectId },
-          select: { name: true },
-        })
-
-        const presentCount = await prisma.attendance.count({
+        const attendanceCounts = await prisma.attendanceRecord.groupBy({
+          by: ["status"],
           where: {
             date: record.date,
-            classId: record.classId,
-            subjectId: record.subjectId,
-            status: "present",
+            sclassId: record.sclassId,
+            teacherId: id,
+          },
+          _count: {
+            status: true,
           },
         })
 
-        const absentCount = await prisma.attendance.count({
-          where: {
-            date: record.date,
-            classId: record.classId,
-            subjectId: record.subjectId,
-            status: "absent",
+        const statusCounts = attendanceCounts.reduce(
+          (acc, item) => {
+            acc[item.status.toLowerCase()] = item._count.status
+            return acc
           },
-        })
+          {} as Record<string, number>,
+        )
 
-        const lateCount = await prisma.attendance.count({
-          where: {
-            date: record.date,
-            classId: record.classId,
-            subjectId: record.subjectId,
-            status: "late",
-          },
-        })
-
-        const totalStudents = presentCount + absentCount + lateCount
+        const presentCount = statusCounts.present || 0
+        const absentCount = statusCounts.absent || 0
+        const lateCount = statusCounts.late || 0
+        const totalStudentsInClass = presentCount + absentCount + lateCount
 
         return {
-          id: `${record.date.toISOString()}-${record.classId}-${record.subjectId}`,
+          id: `${record.date.toISOString()}-${record.sclassId}`,
           date: record.date,
-          className: cls?.name || "Unknown Class",
-          subjectName: subject?.name || "Unknown Subject",
+          className: sclass?.sclassName || "Unknown Class",
+          subjectName: teacherSubject?.subName || "General",
           presentCount,
           absentCount,
           lateCount,
-          totalStudents,
+          totalStudents: totalStudentsInClass,
         }
       }),
     )
 
-    // Format classes for response
-    const classesTeaching = teacherClasses.map((cls) => ({
-      id: cls.id,
-      name: cls.name,
-      section: cls.section,
-      studentCount: cls._count.students,
-    }))
-
     // Format exams for response
     const formattedExams = upcomingExams.map((exam) => ({
       id: exam.id,
-      name: exam.name,
-      date: exam.date.toISOString(),
+      name: exam.examName,
+      date: exam.startDate.toISOString(),
       type: exam.examType,
+      className: exam.sclass?.sclassName || "Unknown Class",
+      subjectName: exam.subject ? `${exam.subject.subName} (${exam.subject.subCode})` : "Unknown Subject",
     }))
 
     const dashboardStats = {
-      totalClasses: teacherClasses.length,
-      totalSubjects: teacherSubjects.length,
+      totalClasses: classesTeaching.length,
+      totalSubjects: subjectsTeaching.length,
       totalStudents,
       upcomingExams: formattedExams,
       recentAttendance: attendanceDetails,
       classesTeaching,
+      teacherInfo: {
+        id: teacher.id,
+        name: teacher.name,
+      },
     }
 
     return NextResponse.json(dashboardStats)

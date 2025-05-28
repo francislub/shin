@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
     console.log("Fetching results for class:", classId, "subject:", subjectId, "examType:", examType)
 
     // Get exam results for the specified criteria
-    // Note: examType is on the Exam model, not ExamResult model
     const results = await prisma.examResult.findMany({
       where: {
         subjectId: subjectId,
@@ -49,7 +48,6 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             rollNum: true,
-            admissionNumber: true,
           },
         },
         subject: {
@@ -112,10 +110,21 @@ export async function POST(request: NextRequest) {
 
     console.log("Saving marks for:", { classId, subjectId, examType, totalMarks, studentsCount: students.length })
 
-    // Get the current term
+    // Get teacher details to get schoolId
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: decoded.id },
+      select: { schoolId: true },
+    })
+
+    if (!teacher) {
+      return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
+    }
+
+    // Get the current term (using status field from your schema)
     const currentTerm = await prisma.term.findFirst({
       where: {
-        isCurrent: true,
+        status: "Active",
+        schoolId: teacher.schoolId,
       },
     })
 
@@ -128,6 +137,7 @@ export async function POST(request: NextRequest) {
       where: {
         examType: examType,
         subjectId: subjectId,
+        sclassId: classId,
         termId: currentTerm.id,
       },
     })
@@ -139,9 +149,14 @@ export async function POST(request: NextRequest) {
           examName: `${examType} - ${new Date().getFullYear()}`,
           examType: examType,
           subjectId: subjectId,
+          sclassId: classId,
           termId: currentTerm.id,
+          schoolId: teacher.schoolId,
+          teacherId: decoded.id,
           totalMarks: totalMarks,
-          date: new Date(),
+          passingMarks: Math.floor(totalMarks * 0.4), // 40% passing marks
+          startDate: new Date(),
+          endDate: new Date(),
         },
       })
     }
@@ -163,6 +178,7 @@ export async function POST(request: NextRequest) {
         where: {
           studentId: studentId,
           examId: exam.id,
+          subjectId: subjectId,
         },
       })
 
@@ -192,6 +208,7 @@ export async function POST(request: NextRequest) {
           data: {
             studentId: studentId,
             examId: exam.id,
+            subjectId: subjectId,
             marksObtained: marksObtained,
             grade: grade,
             teacherId: decoded.id,
