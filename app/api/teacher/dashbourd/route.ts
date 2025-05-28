@@ -1,256 +1,200 @@
-"use client"
+import { type NextRequest, NextResponse } from "next/server"
+import prisma from "@/lib/prisma"
+import { verifyToken } from "@/lib/auth"
 
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { CalendarDays, Loader2 } from 'lucide-react'
-import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+export async function GET(request: NextRequest) {
+  try {
+    const token = request.headers.get("authorization")?.split(" ")[1]
 
-interface DashboardStats {
-  totalClasses: number
-  totalSubjects: number
-  totalStudents: number
-  totalAttendanceRecords: number
-  averageAttendanceRate: number
-  upcomingExams: {
-    id: string
-    name: string
-    date: string
-    type: string
-    className: string
-    subjectName: string
-    daysUntil: number
-  }[]
-  recentAttendance: {
-    id: string
-    date: string
-    className: string
-    subjectName: string
-    presentCount: number
-    absentCount: number
-    lateCount: number
-    totalStudents: number
-    attendanceRate: number
-  }[]
-  classesTeaching: {
-    id: string
-    name: string
-    section: string
-    studentCount: number
-    subjectsCount: number
-    subjects: {
-      id: string
-      name: string
-      code: string
-    }[]
-  }[]
-  teacherInfo: {
-    id: string
-    name: string
-  }
-}
-
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-}
-
-const DashboardPage = () => {
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
-
-  useEffect(() => {
-    const fetchDashboardStats = async () => {
-      setLoading(true)
-      try {
-        const response = await fetch('/api/teacher/dashboard')
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        const data = await response.json()
-        setStats(data)
-      } catch (e: any) {
-        setError(e.message || 'An unexpected error occurred')
-      } finally {
-        setLoading(false)
-      }
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    fetchDashboardStats()
-  }, [])
+    const decoded = verifyToken(token)
 
-  if (loading) {
-    return (
-      <div className="flex h-[600px] items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-          <h3 className="mt-4 text-lg font-semibold">Loading Dashboard</h3>
-          <p className="mt-2 text-sm text-muted-foreground">Please wait while we load your dashboard...</p>
-        </div>
-      </div>
+    if (!decoded || decoded.role !== "Teacher") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Get teacher details with related data
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: decoded.id },
+      include: {
+        teachSclass: {
+          include: {
+            students: {
+              select: {
+                id: true,
+                name: true,
+                rollNum: true,
+              },
+            },
+            subjects: {
+              include: {
+                teacher: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        teachSubject: true,
+      },
+    })
+
+    if (!teacher) {
+      return NextResponse.json({ error: "Teacher not found" }, { status: 404 })
+    }
+
+    // Get all exams for subjects in teacher's class or their specific subject
+    const examWhereClause: any = {
+      OR: [
+        { sclassId: teacher.teachSclassId }, // All exams in teacher's class
+      ],
+    }
+
+    if (teacher.teachSubject) {
+      examWhereClause.OR.push({ subjectId: teacher.teachSubject.id }) // Exams for teacher's specific subject
+    }
+
+    const recentExams = await prisma.exam.findMany({
+      where: examWhereClause,
+      include: {
+        subject: {
+          select: {
+            id: true,
+            subName: true,
+          },
+        },
+        sclass: {
+          select: {
+            id: true,
+            sclassName: true,
+          },
+        },
+        results: {
+          include: {
+            student: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        startDate: "desc",
+      },
+      take: 5,
+    })
+
+    // Get recent attendance records for teacher's class
+    const recentAttendance = await prisma.attendanceRecord.findMany({
+      where: {
+        sclassId: teacher.teachSclassId,
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            rollNum: true,
+          },
+        },
+        sclass: {
+          select: {
+            id: true,
+            sclassName: true,
+          },
+        },
+      },
+      orderBy: {
+        date: "desc",
+      },
+      take: 10,
+    })
+
+    // Get attendance statistics for teacher's class
+    const today = new Date()
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+
+    const monthlyAttendance = await prisma.attendanceRecord.findMany({
+      where: {
+        sclassId: teacher.teachSclassId,
+        date: {
+          gte: startOfMonth,
+          lte: today,
+        },
+      },
+    })
+
+    const attendanceStats = {
+      totalRecords: monthlyAttendance.length,
+      presentCount: monthlyAttendance.filter((record) => record.status === "Present").length,
+      absentCount: monthlyAttendance.filter((record) => record.status === "Absent").length,
+      lateCount: monthlyAttendance.filter((record) => record.status === "Late").length,
+    }
+
+    // Get exam statistics
+    const examStats = {
+      totalExams: recentExams.length,
+      upcomingExams: recentExams.filter((exam) => new Date(exam.startDate) > today).length,
+      completedExams: recentExams.filter((exam) => new Date(exam.endDate) < today).length,
+    }
+
+    // Get class performance summary
+    const classPerformance = await Promise.all(
+      recentExams.map(async (exam) => {
+        const results = await prisma.examResult.findMany({
+          where: {
+            examId: exam.id,
+          },
+        })
+
+        const totalStudents = results.length
+        const passedStudents = results.filter((result) => result.marksObtained >= exam.passingMarks).length
+        const averageMarks =
+          totalStudents > 0 ? results.reduce((sum, result) => sum + result.marksObtained, 0) / totalStudents : 0
+
+        return {
+          examId: exam.id,
+          examName: exam.examName,
+          subject: exam.subject?.subName,
+          totalStudents,
+          passedStudents,
+          passPercentage: totalStudents > 0 ? (passedStudents / totalStudents) * 100 : 0,
+          averageMarks,
+        }
+      }),
     )
+
+    const dashboardData = {
+      teacher: {
+        id: teacher.id,
+        name: teacher.name,
+        email: teacher.email,
+        class: teacher.teachSclass,
+        subject: teacher.teachSubject,
+        allSubjects: teacher.teachSclass.subjects, // All subjects in the class
+      },
+      stats: {
+        totalStudents: teacher.teachSclass.students.length,
+        totalSubjects: teacher.teachSclass.subjects.length,
+        attendanceStats,
+        examStats,
+      },
+      recentExams,
+      recentAttendance,
+      classPerformance,
+    }
+
+    return NextResponse.json(dashboardData)
+  } catch (error) {
+    console.error("Error fetching teacher dashboard data:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
-
-  if (error) {
-    return (
-      <div className="flex h-[600px] items-center justify-center">
-        <div className="text-center">
-          <h3 className="text-lg font-semibold text-red-500">Error Loading Dashboard</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {error}. Please try again later.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!stats) {
-    return (
-      <div className="flex h-[600px] items-center justify-center">
-        <div className="text-center">
-          <h3 className="text-lg font-semibold">No Data Available</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            No dashboard data was found.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="container mx-auto py-10">
-      <h1 className="scroll-m-20 pb-2 text-3xl font-semibold tracking-tight transition-colors first:mt-0">
-        Dashboard
-      </h1>
-      <p className="text-muted-foreground">Here&apos;s an overview of your classes, attendance, and upcoming exams.</p>
-
-      <div className="grid gap-4 mt-8 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Total Classes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalClasses}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Total Subjects</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalSubjects}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Total Students</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalStudents}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Total Attendance Records</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalAttendanceRecords}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 mt-8 md:grid-cols-1 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Upcoming Exams</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              {stats.upcomingExams.length === 0 ? (
-                <p className="text-muted-foreground">No upcoming exams.</p>
-              ) : (
-                stats.upcomingExams.map((exam) => (
-                  <div
-                    key={exam.id}
-                    className="rounded-lg border p-3 bg-gradient-to-r from-sky-50 to-blue-50 dark:from-sky-900/10 dark:to-blue-900/10"
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium">{exam.name}</p>
-                      <Badge
-                        variant="outline"
-                        className="bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:hover:bg-sky-900/50"
-                      >
-                        {exam.type}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{exam.className}</p>
-                    <p className="text-xs text-muted-foreground">{exam.subjectName}</p>
-                    <div className="mt-2 flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground">
-                        <CalendarDays className="mr-1 inline h-3 w-3" />
-                        {formatDate(exam.date)}
-                      </p>
-                      <span className="text-xs font-medium text-orange-600">
-                        {exam.daysUntil === 0 ? 'Today' : exam.daysUntil === 1 ? 'Tomorrow' : `${exam.daysUntil} days`}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Attendance</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              {stats.recentAttendance.length === 0 ? (
-                <p className="text-muted-foreground">No recent attendance records.</p>
-              ) : (
-                stats.recentAttendance.map((record) => (
-                  <div key={record.id} className="rounded-lg border p-3">
-                    <p className="font-medium">{record.className}</p>
-                    <p className="text-sm text-muted-foreground">{record.subjectName} - {formatDate(record.date)}</p>
-                    <div className="flex items-center gap-3">
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">Present</p>
-                        <p className="font-medium text-green-600">{record.presentCount}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">Absent</p>
-                        <p className="font-medium text-red-600">{record.absentCount}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">Late</p>
-                        <p className="font-medium text-yellow-600">{record.lateCount}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground">Rate</p>
-                        <p className="font-medium text-blue-600">{record.attendanceRate}%</p>
-                      </div>
-                      <Button variant="outline" size="sm" onClick={() => router.push(`/teacher/attendance`)}>
-                        Details
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  )
 }
-
-export default DashboardPage
